@@ -185,6 +185,5 @@ Este proyecto está licenciado bajo la Licencia MIT.
 ---
 
 ## 📬 Contacto
-
-- Email: soporte@asistencia-app.com
-- GitHub: [https://github.com/tu-usuario/asistencia-app](https://github.com/tu-usuario/asistencia-app)
+- Email: Bd567358546@gmail.com
+- GitHub: [https://github.com/Jose-Bohorquez] (https://github.com/Jose-Bohorquez/asistencia-app)
