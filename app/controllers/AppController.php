@@ -7,6 +7,7 @@ require_once __DIR__ . '/AsistenciaController.php';
 require_once __DIR__ . '/UsuariosController.php';
 require_once __DIR__ . '/ProgramasController.php';
 require_once __DIR__ . '/SesionesController.php';
+require_once __DIR__ . '/EmailController.php';
 
 class AppController {
     protected $db;
@@ -83,10 +84,11 @@ class AppController {
                 $asistencia = new AsistenciaController($this->db);
                 $asistencia->registrarAsistencia();
                 break;
+
             case 'exportar':
                 if (isset($_GET['sesion_id'])) {
                     $sesion_id = intval($_GET['sesion_id']);
-                    $format = $_GET['format'] ?? 'excel'; // Default to excel if not specified
+                    $format = $_GET['format'] ?? ''; // No default format
                     $csrf_token = $_GET['csrf_token'] ?? '';
 
                     // Validar permisos
@@ -202,12 +204,81 @@ class AppController {
                         
                         echo '</table></body></html>';
                         exit;
+                    } else {
+                        // Sin formato específico, mostrar previsualización (como en la versión anterior)
+                        // Obtener datos de la sesión
+                        $stmt = $conn->prepare("
+                            SELECT s.*, c.nombre as curso_nombre, c.codigo, c.programa, c.area, c.semestre, c.grupo, c.aula, c.sede
+                            FROM sesiones s
+                            JOIN cursos c ON s.curso_id = c.id
+                            WHERE s.id = ?
+                        ");
+                        $stmt->bind_param("i", $sesion_id);
+                        $stmt->execute();
+                        $result = $stmt->get_result();
+                        $sesion = $result->fetch_assoc();
+                        
+                        if ($sesion) {
+                            include '../app/views/admin/exportar.php';
+                        } else {
+                            $error = 'Sesión no encontrada.';
+                            include '../app/views/admin/exportar.php';
+                        }
                     }
                 } else {
                     $admin = new AdminController($this->db);
                     $admin->exportarAsistencia();
                 }
                 break;
+            case 'enviar_correo':
+                // Verificar que sea una petición AJAX
+                if (!isset($_SERVER['HTTP_X_REQUESTED_WITH']) || $_SERVER['HTTP_X_REQUESTED_WITH'] !== 'XMLHttpRequest') {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'message' => 'Petición inválida']);
+                    exit;
+                }
+                
+                // Verificar permisos
+                if (!isset($_SESSION['user_rol']) || !in_array($_SESSION['user_rol'], ['admin', 'super_admin', 'profesor'])) {
+                    http_response_code(403);
+                    echo json_encode(['success' => false, 'message' => 'No tienes permisos para esta acción']);
+                    exit;
+                }
+                
+                // Obtener datos del POST
+                $input = json_decode(file_get_contents('php://input'), true);
+                $sesion_id = intval($input['sesion_id'] ?? 0);
+                $formato = $input['formato'] ?? '';
+                $csrf_token = $input['csrf_token'] ?? '';
+                
+                // Validar CSRF token
+                if (!isset($_SESSION['csrf_token']) || $csrf_token !== $_SESSION['csrf_token']) {
+                    http_response_code(403);
+                    echo json_encode(['success' => false, 'message' => 'Token de seguridad inválido']);
+                    exit;
+                }
+                
+                // Validar parámetros
+                if ($sesion_id <= 0 || !in_array($formato, ['pdf', 'excel'])) {
+                    http_response_code(400);
+                    echo json_encode(['success' => false, 'message' => 'Parámetros inválidos']);
+                    exit;
+                }
+                
+                try {
+                    $emailController = new EmailController($this->db);
+                    $result = $emailController->enviarAsistenciaPorCorreo($sesion_id, $formato, $_SESSION['user_id']);
+                    
+                    if ($result['success']) {
+                        echo json_encode(['success' => true, 'message' => 'Archivo enviado exitosamente']);
+                    } else {
+                        echo json_encode(['success' => false, 'message' => $result['message']]);
+                    }
+                } catch (Exception $e) {
+                    error_log('Error enviando correo: ' . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'Error interno del servidor']);
+                }
+                exit;
             default:
                 // Default to home page or dashboard if logged in
                 if (isset($_SESSION['user_id'])) {

@@ -150,7 +150,7 @@
                                                target="_blank" title="Abrir enlace de asistencia">
                                                 <i class="fas fa-external-link-alt mr-1"></i>Enlace
                                             </a>
-                                            <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>&format=excel" 
+                                            <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>" 
                                                class="inline-flex items-center px-3 py-1 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-medium rounded-md transition duration-200" 
                                                title="Exportar asistencia">
                                                 <i class="fas fa-download mr-1"></i>Exportar
@@ -207,12 +207,12 @@
                                    target="_blank">
                                     <i class="fas fa-external-link-alt mr-2"></i>Enlace
                                 </a>
-                                <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>&format=excel" 
+                                <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>" 
                                    class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-md transition duration-200">
                                     <i class="fas fa-download mr-2"></i>Exportar
                                 </a>
                                 <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>&format=print" 
-                                   class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium rounded-md transition duration-200" 
+                                   class="flex-1 inline-flex items-center justify-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md transition duration-200" 
                                    target="_blank">
                                     <i class="fas fa-print mr-2"></i>Imprimir
                                 </a>

@@ -37,7 +37,7 @@ if (!$isPrintMode) {
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
     <div class="flex justify-between items-center mb-6 no-print">
         <h1 class="text-2xl font-bold text-gray-800">Exportar Asistencia</h1>
-        <?php if (isset($_SESSION['rol']) && $_SESSION['rol'] === 'admin'): ?>
+        <?php if (isset($_SESSION['user_rol']) && in_array($_SESSION['user_rol'], ['admin', 'super_admin', 'profesor'])): ?>
             <div>
                 <button id="btnImprimir" class="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">
                     <i class="fas fa-print mr-1"></i> Imprimir
@@ -46,9 +46,15 @@ if (!$isPrintMode) {
                     <i class="fas fa-file-pdf mr-1"></i> Exportar PDF
                 </a>
                 <!-- Aquí puedes agregar el botón para exportar a Excel -->
-                <a href="index.php?page=exportar&sesion_id=<?= intval($sesion['id']) ?>&format=excel&csrf_token=<?= $_SESSION['csrf_token'] ?? '' ?>" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">
+                <a href="index.php?page=exportar&sesion_id=<?= intval($sesion['id']) ?>&format=excel&csrf_token=<?= $_SESSION['csrf_token'] ?? '' ?>" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">
                     <i class="fas fa-file-excel mr-1"></i> Exportar Excel
                 </a>
+                <button onclick="enviarPorCorreo('pdf', <?= intval($sesion['id']) ?>)" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mr-2">
+                    <i class="fas fa-envelope mr-1"></i> Enviar PDF
+                </button>
+                <button onclick="enviarPorCorreo('excel', <?= intval($sesion['id']) ?>)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">
+                    <i class="fas fa-envelope mr-1"></i> Enviar Excel
+                </button>
             </div>
         <?php endif; ?>
     </div>
@@ -224,6 +230,48 @@ if (!$isPrintMode) {
             window.print();
         });
     });
+
+    function enviarPorCorreo(formato, sesionId) {
+        // Mostrar confirmación
+        if (confirm('¿Desea enviar el archivo ' + formato.toUpperCase() + ' a su correo registrado?')) {
+            // Mostrar loading
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Enviando...';
+            btn.disabled = true;
+            
+            // Realizar petición AJAX
+            fetch('index.php?page=enviar_correo', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({
+                    sesion_id: sesionId,
+                    formato: formato,
+                    csrf_token: '<?= $_SESSION['csrf_token'] ?? '' ?>'
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Archivo enviado exitosamente a su correo.');
+                } else {
+                    alert('Error al enviar el archivo: ' + (data.message || 'Error desconocido'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error al enviar el archivo. Por favor, intente nuevamente.');
+            })
+            .finally(() => {
+                // Restaurar botón
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            });
+        }
+    }
 </script>
 
 <style>
