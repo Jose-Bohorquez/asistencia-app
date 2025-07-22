@@ -14,11 +14,11 @@ class AuthController {
             $password = $_POST['password'] ?? '';
             
             if (empty($username) || empty($password)) {
-                return ['error' => 'Por favor ingrese usuario y contraseña'];
-            }
+                $error = 'Por favor ingrese usuario y contraseña';
+            } else {
             
-            $conn = $this->db->getConnection();
-            $stmt = $conn->prepare("SELECT id, username, password, nombre, rol FROM usuarios WHERE username = ?");
+            $conn = $this->db->connect();
+            $stmt = $conn->prepare("SELECT id, username, password, nombre, email, rol, activo FROM usuarios WHERE username = ? AND activo = 1");
             $stmt->bind_param("s", $username);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -31,7 +31,9 @@ class AuthController {
                     $_SESSION['user_id'] = $user['id'];
                     $_SESSION['username'] = $user['username'];
                     $_SESSION['nombre'] = $user['nombre'];
-                    $_SESSION['rol'] = $user['rol'];
+                    $_SESSION['email'] = $user['email'];
+                    $_SESSION['user_rol'] = $user['rol'];
+                    $_SESSION['rol'] = $user['rol']; // Mantener compatibilidad
                     
                     header('Location: index.php?page=dashboard');
                     exit;
@@ -39,10 +41,11 @@ class AuthController {
                     $error = 'Contraseña incorrecta.';
                 }
             } else {
-                $error = 'Usuario no encontrado.';
+                $error = 'Usuario no encontrado o inactivo.';
             }
             
             $stmt->close();
+            }
         }
         
         // Mostrar vista de login

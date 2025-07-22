@@ -11,12 +11,14 @@ class AsistenciaController {
         $success = '';
         $sesion = null;
         
-        // Verificar si hay un ID de sesión en la URL
+        // Verificar si hay un ID de sesión o token en la URL
         $sesion_id = isset($_GET['sesion_id']) ? intval($_GET['sesion_id']) : 0;
+        $token = isset($_GET['token']) ? $_GET['token'] : '';
+        
+        $conn = $this->db->getConnection();
         
         if ($sesion_id > 0) {
-            // Obtener información de la sesión
-            $conn = $this->db->getConnection();
+            // Obtener información de la sesión por ID
             $stmt = $conn->prepare("
                 SELECT s.*, c.nombre as curso_nombre, c.programa, c.area, c.semestre, c.grupo, c.aula, c.sede
                 FROM sesiones s
@@ -26,9 +28,28 @@ class AsistenciaController {
             $stmt->bind_param("i", $sesion_id);
             $stmt->execute();
             $result = $stmt->get_result();
+        } elseif (!empty($token)) {
+            // Obtener información de la sesión por token
+            $stmt = $conn->prepare("
+                SELECT s.*, c.nombre as curso_nombre, c.programa, c.area, c.semestre, c.grupo, c.aula, c.sede
+                FROM sesiones s
+                JOIN cursos c ON s.curso_id = c.id
+                WHERE s.token = ? AND s.estado = 'activa'
+            ");
+            $stmt->bind_param("s", $token);
+            $stmt->execute();
+            $result = $stmt->get_result();
+        } else {
+            $error = 'Sesión no válida.';
+            include '../app/views/asistencia/registro.php';
+            return;
+        }
+        
+        if ($result) {
             
             if ($result->num_rows === 1) {
                 $sesion = $result->fetch_assoc();
+                $sesion_id = $sesion['id']; // Asegurar que tenemos el ID para el resto del código
                 
                 // Verificar si el usuario ya registró asistencia (por documento)
                 $ya_registrado = false;

@@ -1,7 +1,41 @@
-<?php include '../app/views/layouts/header.php'; ?>
+<?php 
+$isPrintMode = isset($_GET['print']) && $_GET['print'] == '1';
+if (!$isPrintMode) {
+    include '../app/views/layouts/header.php'; 
+}
+?>
 
+<?php if ($isPrintMode): ?>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Exportar Asistencia - PDF</title>
+    <style>
+        @media print {
+            body { margin: 0; padding: 10px; font-family: Arial, sans-serif; }
+            .no-print { display: none !important; }
+            table { page-break-inside: avoid; }
+            .page-break { page-break-before: always; }
+        }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+        table { border-collapse: collapse; width: 100%; }
+        td, th { border: 1px solid #000; padding: 4px; text-align: center; font-size: 10px; }
+        .logo-cell { width: 20%; }
+        .title-cell { width: 60%; }
+        .info-cell { width: 20%; }
+        img { max-height: 60px; }
+    </style>
+    <script>
+        window.onload = function() {
+            window.print();
+        }
+    </script>
+</head>
+<body>
+<?php else: ?>
 <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-    <div class="flex justify-between items-center mb-6">
+    <div class="flex justify-between items-center mb-6 no-print">
         <h1 class="text-2xl font-bold text-gray-800">Exportar Asistencia</h1>
         <?php if (isset($_SESSION['rol']) && $_SESSION['rol'] === 'admin'): ?>
             <div>
@@ -18,6 +52,7 @@
             </div>
         <?php endif; ?>
     </div>
+<?php endif; ?>
     
     <?php if (!empty($error)): ?>
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -33,7 +68,7 @@
                     <!-- Fila 1: Logo, Título, Página -->
                     <tr>
                         <td class="border border-black p-2 text-center" style="width: 20%;">
-                            <img src="../../public/assets/img/logo.png" alt="Logo Universidad del Tolima" class="h-16 mx-auto">
+                            <img src="assets/img/logo.png" alt="Logo Universidad del Tolima" class="h-16 mx-auto">
                             <div class="text-xs mt-1">Universidad del Tolima</div>
                         </td>
                         <td class="border border-black p-2 text-center font-bold" style="width: 60%; vertical-align: top; padding: 0;">
@@ -120,13 +155,13 @@
                 <table class="w-full border-collapse border border-black mt-0" style="table-layout: fixed;">
                     <thead>
                         <tr>
-                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 22%;">NOMBRE ESTUDIANTE</th>
+                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 18%;">NOMBRE ESTUDIANTE</th>
                             <th class="border border-black p-2 text-xs font-bold text-center" style="width: 10%;">DOCUMENTO IDENTIFICACIÓN</th>
-                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 14%;">CÓDIGO</th>
+                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 10%;">CÓDIGO</th>
                             <th class="border border-black p-2 text-xs font-bold text-center" style="width: 12%;">TELÉFONO</th>
                             <th class="border border-black p-2 text-xs font-bold text-center" style="width: 18%;">DIRECCIÓN</th>
                             <th class="border border-black p-2 text-xs font-bold text-center" style="width: 18%;">CORREO ELECTRÓNICO</th>
-                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 6%;">FIRMA</th>
+                            <th class="border border-black p-2 text-xs font-bold text-center" style="width: 14%;">FIRMA</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -218,9 +253,9 @@
     }
 </style>
 
+<?php if ($isPrintMode): ?>
+</body>
+</html>
+<?php else: ?>
 <?php include '../app/views/layouts/footer.php'; ?>
-<?php
-echo '<pre>';
-#var_dump($asistencias);
-echo '</pre>';
-?>
+<?php endif; ?>
