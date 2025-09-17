@@ -1,199 +1,213 @@
-<?php include '../app/views/layouts/header.php'; ?>
+<?php
+// Incluir componentes necesarios
+require_once '../app/views/components/form.php';
+require_once '../app/views/components/button.php';
+require_once '../app/views/components/alert.php';
+require_once '../app/views/components/card.php';
+require_once '../app/views/components/table.php';
+require_once '../app/views/components/modal.php';
 
-<div class="bg-white rounded-lg shadow-md p-4 sm:p-6 mb-4 sm:mb-6">
-    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3 sm:gap-0">
-        <h1 class="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Sesiones</h1>
-        <button id="btnNuevaSesion" class="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-3 sm:px-4 rounded text-sm sm:text-base w-full sm:w-auto">
-            <i class="fas fa-plus mr-1"></i> Nueva Sesión
-        </button>
-    </div>
-    
-    <?php if (!empty($error)): ?>
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            <?= $error ?>
+// Configuración del layout
+$pageTitle = 'Gestión de Sesiones - Sistema de Asistencia';
+$bodyClass = 'bg-gray-50';
+
+// Iniciar captura de contenido
+ob_start();
+?>
+
+<?php
+echo renderCard([
+    'content' => function() use ($error, $success, $cursos, $sesiones) {
+        ?>
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 sm:mb-6 gap-3 sm:gap-0">
+            <h1 class="text-xl sm:text-2xl font-bold text-gray-800">Gestión de Sesiones</h1>
+            <?php
+            echo renderButton('Nueva Sesión', [
+                'id' => 'btnNuevaSesion',
+                'style' => 'primary',
+                'icon' => 'fas fa-plus',
+                'class' => 'bg-blue-800 hover:bg-blue-700 w-full sm:w-auto'
+            ]);
+            ?>
         </div>
-    <?php endif; ?>
-    
-    <?php if (!empty($success)): ?>
-        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-            <?= $success ?>
+        
+        <?php
+        // Mostrar alertas
+        if (!empty($error)) {
+            echo renderAlert([
+                'type' => 'error',
+                'message' => $error,
+                'dismissible' => false
+            ]);
+        }
+        
+        if (!empty($success)) {
+            echo renderAlert([
+                'type' => 'success',
+                'message' => $success,
+                'dismissible' => false
+            ]);
+        }
+        ?>
+        
+        <!-- Formulario para crear/editar sesión (oculto por defecto) -->
+        <div id="formSesion" class="bg-gray-100 p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 hidden">
+            <h2 class="text-xl font-bold text-gray-800 mb-4" id="formTitle">Nueva Sesión</h2>
+            <form method="POST" action="index.php?page=sesiones">
+                <input type="hidden" id="id" name="id" value="">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 mb-4">
+                    <?php
+                    // Campo curso
+                    $cursoOptions = ['' => 'Seleccione un curso'];
+                    foreach ($cursos as $curso) {
+                        $cursoOptions[$curso['id']] = $curso['codigo'] . ' - ' . $curso['nombre'];
+                    }
+                    echo renderSelect([
+                        'name' => 'curso_id',
+                        'label' => 'Curso *',
+                        'options' => $cursoOptions,
+                        'required' => true
+                    ]);
+                    
+                    // Campo fecha
+                    echo renderInput([
+                        'name' => 'fecha',
+                        'label' => 'Fecha *',
+                        'type' => 'date',
+                        'required' => true
+                    ]);
+                    
+                    // Campo hora inicio
+                    echo renderInput([
+                        'name' => 'hora_inicio',
+                        'label' => 'Hora Inicio *',
+                        'type' => 'time',
+                        'required' => true
+                    ]);
+                    
+                    // Campo estado
+                    echo renderSelect([
+                        'name' => 'estado',
+                        'label' => 'Estado',
+                        'options' => [
+                            'activa' => 'Activa',
+                            'finalizada' => 'Finalizada',
+                            'cancelada' => 'Cancelada'
+                        ]
+                    ]);
+                    ?>
+                </div>
+                
+                <div class="flex justify-end">
+                    <?php
+                    echo renderButton('Cancelar', [
+                        'id' => 'btnCancelar',
+                        'type' => 'button',
+                        'style' => 'secondary',
+                        'class' => 'mr-2'
+                    ]);
+                    
+                    echo renderButton('Guardar', [
+                        'type' => 'submit',
+                        'style' => 'primary',
+                        'class' => 'bg-blue-800 hover:bg-blue-700'
+                    ]);
+                    ?>
+                </div>
+            </form>
         </div>
-    <?php endif; ?>
     
-    <!-- Formulario para crear/editar sesión (oculto por defecto) -->
-    <div id="formSesion" class="bg-gray-100 p-3 sm:p-4 rounded-lg mb-4 sm:mb-6 hidden">
-        <h2 class="text-xl font-bold text-gray-800 mb-4" id="formTitle">Nueva Sesión</h2>
-        <form method="POST" action="index.php?page=sesiones">
-            <input type="hidden" id="id" name="id" value="">
-            
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 mb-4">
-                <div>
-                    <label for="curso_id" class="block text-gray-700 font-bold mb-2">Curso *</label>
-                    <select id="curso_id" name="curso_id" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500" required>
-                        <option value="">Seleccione un curso</option>
-                        <?php foreach ($cursos as $curso): ?>
-                            <option value="<?= $curso['id'] ?>"><?= $curso['codigo'] ?> - <?= $curso['nombre'] ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <div>
-                    <label for="fecha" class="block text-gray-700 font-bold mb-2">Fecha *</label>
-                    <input type="date" id="fecha" name="fecha" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500" required>
-                </div>
-                
-                <div>
-                    <label for="hora_inicio" class="block text-gray-700 font-bold mb-2">Hora Inicio *</label>
-                    <input type="time" id="hora_inicio" name="hora_inicio" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500" required>
-                </div>
-                
-                <div>
-                    <label for="estado" class="block text-gray-700 font-bold mb-2">Estado</label>
-                    <select id="estado" name="estado" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:border-blue-500">
-                        <option value="activa">Activa</option>
-                        <option value="finalizada">Finalizada</option>
-                        <option value="cancelada">Cancelada</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="flex justify-end">
-                <button type="button" id="btnCancelar" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded mr-2">
-                    Cancelar
-                </button>
-                <button type="submit" class="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
-                    Guardar
-                </button>
-            </div>
-        </form>
-    </div>
-    
-    <!-- Lista de sesiones -->
-    <div class="w-full">
+        <!-- Lista de sesiones -->
         <?php if (empty($sesiones)): ?>
-            <div class="bg-yellow-100 border border-yellow-400 text-yellow-700 px-3 sm:px-4 py-3 rounded text-sm sm:text-base">
-                No hay sesiones registradas. Cree una nueva sesión para comenzar.
-            </div>
+            <?php
+            echo renderAlert([
+                'type' => 'warning',
+                'message' => 'No hay sesiones registradas. Cree una nueva sesión para comenzar.',
+                'dismissible' => false
+            ]);
+            ?>
         <?php else: ?>
-            <!-- Vista móvil: Tarjetas -->
-            <div class="block lg:hidden space-y-3">
-                <?php foreach ($sesiones as $sesion): ?>
+            <?php
+            // Preparar datos para la tabla
+            $tableHeaders = [
+                'Curso',
+                'Fecha', 
+                'Hora Inicio',
+                'Hora Fin',
+                'Estado',
+                'Acciones'
+            ];
+            
+            $tableData = [];
+            foreach ($sesiones as $sesion) {
+                $estadoBadge = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ' . 
+                              ($sesion['estado'] === 'activa' ? 'bg-green-100 text-green-800' : 
+                              ($sesion['estado'] === 'finalizada' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800')) . '">' . 
+                              ucfirst($sesion['estado']) . '</span>';
+                
+                $acciones = [];
+                if (!empty($sesion['token'])) {
+                    $acciones[] = '<a href="index.php?page=asistencia&token=' . $sesion['token'] . '" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-xs" target="_blank"><i class="fas fa-link mr-1"></i> Enlace público</a>';
+                }
+                
+                if ($sesion['estado'] === 'activa') {
+                    $acciones[] = '<a href="index.php?page=asistencia&sesion_id=' . $sesion['id'] . '" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-xs" target="_blank"><i class="fas fa-link mr-1"></i> Enlace</a>';
+                    if (in_array($_SESSION['user_rol'], ['super_admin', 'admin'])) {
+                        $acciones[] = '<a href="index.php?page=sesiones&deactivate=' . $sesion['id'] . '" class="bg-red-500 hover:bg-red-700 text-white py-1 px-2 rounded text-xs" onclick="return confirm(\'¿Está seguro de finalizar esta sesión?\');"><i class="fas fa-stop-circle mr-1"></i> Finalizar</a>';
+                    }
+                }
+                
+                if ($sesion['estado'] === 'finalizada') {
+                    $acciones[] = '<a href="index.php?page=exportar&sesion_id=' . $sesion['id'] . '" class="bg-green-500 hover:bg-green-700 text-white py-1 px-2 rounded text-xs"><i class="fas fa-file-export mr-1"></i> Exportar</a>';
+                }
+                
+                if ($sesion['estado'] !== 'activa' && in_array($_SESSION['user_rol'], ['super_admin', 'admin'])) {
+                    $acciones[] = '<a href="index.php?page=sesiones&activate=' . $sesion['id'] . '" class="bg-yellow-500 hover:bg-yellow-700 text-white py-1 px-2 rounded text-xs" onclick="return confirm(\'¿Está seguro de activar esta sesión?\');"><i class="fas fa-play-circle mr-1"></i> Activar</a>';
+                }
+                
+                $tableData[] = [
+                    $sesion['curso_nombre'],
+                    date('d/m/Y', strtotime($sesion['fecha'])),
+                    date('H:i', strtotime($sesion['hora_inicio'])),
+                    $sesion['hora_fin'] ? date('H:i', strtotime($sesion['hora_fin'])) : '-',
+                    $estadoBadge,
+                    '<div class="flex flex-wrap gap-1">' . implode(' ', $acciones) . '</div>'
+                ];
+            }
+            
+            echo renderTable([
+                'headers' => $tableHeaders,
+                'data' => $tableData,
+                'responsive' => true,
+                'mobile_card_template' => function($row, $headers) {
+                    return '
                     <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
                         <div class="flex justify-between items-start mb-3">
                             <div class="flex-1">
-                                <h3 class="font-semibold text-gray-900 text-sm"><?= $sesion['curso_nombre'] ?></h3>
-                                <p class="text-gray-600 text-xs mt-1"><?= date('d/m/Y', strtotime($sesion['fecha'])) ?> - <?= date('H:i', strtotime($sesion['hora_inicio'])) ?></p>
+                                <h3 class="font-semibold text-gray-900 text-sm">' . $row[0] . '</h3>
+                                <p class="text-gray-600 text-xs mt-1">' . $row[1] . ' - ' . $row[2] . '</p>
                             </div>
-                            <div class="ml-2">
-                                <?php if ($sesion['estado'] === 'activa'): ?>
-                                    <span class="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs">Activa</span>
-                                <?php elseif ($sesion['estado'] === 'finalizada'): ?>
-                                    <span class="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs">Finalizada</span>
-                                <?php else: ?>
-                                    <span class="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs">Cancelada</span>
-                                <?php endif; ?>
-                            </div>
+                            <div class="ml-2">' . $row[4] . '</div>
                         </div>
                         <div class="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-3">
-                            <div><span class="font-medium">Hora Fin:</span> <?= $sesion['hora_fin'] ? date('H:i', strtotime($sesion['hora_fin'])) : '-' ?></div>
+                            <div><span class="font-medium">Hora Fin:</span> ' . $row[3] . '</div>
                         </div>
-                        <div class="flex flex-col gap-2">
-                            <?php if (!empty($sesion['token'])): ?>
-                                <a href="index.php?page=asistencia&token=<?= $sesion['token'] ?>" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-xs text-center" target="_blank">
-                                    <i class="fas fa-link mr-1"></i> Enlace público
-                                </a>
-                            <?php endif; ?>
-                            <div class="flex gap-2">
-                                <?php if ($sesion['estado'] === 'activa'): ?>
-                                    <a href="index.php?page=asistencia&sesion_id=<?= $sesion['id'] ?>" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-xs text-center flex-1" target="_blank">
-                                        <i class="fas fa-link mr-1"></i> Enlace
-                                    </a>
-                                    <?php if (in_array($_SESSION['user_rol'], ['super_admin', 'admin'])): ?>
-                                    <a href="index.php?page=sesiones&deactivate=<?= $sesion['id'] ?>" class="bg-red-500 hover:bg-red-700 text-white py-1 px-2 rounded text-xs text-center flex-1" onclick="return confirm('¿Está seguro de finalizar esta sesión?')">
-                                        <i class="fas fa-stop-circle mr-1"></i> Finalizar
-                                    </a>
-                                    <?php endif; ?>
-                                <?php elseif ($sesion['estado'] === 'finalizada'): ?>
-                                    <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>" class="bg-green-500 hover:bg-green-700 text-white py-1 px-2 rounded text-xs text-center flex-1">
-                                        <i class="fas fa-file-export mr-1"></i> Exportar
-                                    </a>
-                                <?php endif; ?>
-                                <?php if ($sesion['estado'] !== 'activa' && in_array($_SESSION['user_rol'], ['super_admin', 'admin'])): ?>
-                                    <a href="index.php?page=sesiones&activate=<?= $sesion['id'] ?>" class="bg-yellow-500 hover:bg-yellow-700 text-white py-1 px-2 rounded text-xs text-center flex-1" onclick="return confirm('¿Está seguro de activar esta sesión?')">
-                                        <i class="fas fa-play-circle mr-1"></i> Activar
-                                    </a>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-            
-            <!-- Vista desktop: Tabla -->
-            <div class="hidden lg:block overflow-x-auto">
-                <table class="min-w-full bg-white">
-                    <thead class="bg-gray-100">
-                        <tr>
-                            <th class="py-2 px-4 border-b text-left">Curso</th>
-                            <th class="py-2 px-4 border-b text-left">Fecha</th>
-                            <th class="py-2 px-4 border-b text-left">Hora Inicio</th>
-                            <th class="py-2 px-4 border-b text-left">Hora Fin</th>
-                            <th class="py-2 px-4 border-b text-left">Estado</th>
-                            <th class="py-2 px-4 border-b text-center">Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <?php foreach ($sesiones as $sesion): ?>
-                        <tr>
-                            <td class="py-2 px-4 border-b"><?= $sesion['curso_nombre'] ?></td>
-                            <td class="py-2 px-4 border-b"><?= date('d/m/Y', strtotime($sesion['fecha'])) ?></td>
-                            <td class="py-2 px-4 border-b"><?= date('H:i', strtotime($sesion['hora_inicio'])) ?></td>
-                            <td class="py-2 px-4 border-b"><?= $sesion['hora_fin'] ? date('H:i', strtotime($sesion['hora_fin'])) : '-' ?></td>
-                            <td class="py-2 px-4 border-b">
-                                <?php if ($sesion['estado'] === 'activa'): ?>
-                                    <span class="bg-green-100 text-green-800 py-1 px-2 rounded-full text-xs">Activa</span>
-                                <?php elseif ($sesion['estado'] === 'finalizada'): ?>
-                                    <span class="bg-blue-100 text-blue-800 py-1 px-2 rounded-full text-xs">Finalizada</span>
-                                <?php else: ?>
-                                    <span class="bg-red-100 text-red-800 py-1 px-2 rounded-full text-xs">Cancelada</span>
-                                <?php endif; ?>
-                            </td>
-                            <td class="py-2 px-4 border-b text-center">
-                                <?php if (!empty($sesion['token'])): ?>
-                                    <a href="index.php?page=asistencia&token=<?= $sesion['token'] ?>" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-sm" target="_blank">
-                                        <i class="fas fa-link mr-1"></i> Enlace público
-                                    </a>
-                                <?php endif; ?>
-                                <?php if ($sesion['estado'] === 'activa'): ?>
-                                    <a href="index.php?page=asistencia&sesion_id=<?= $sesion['id'] ?>" class="bg-blue-500 hover:bg-blue-700 text-white py-1 px-2 rounded text-sm mr-1" target="_blank">
-                                        <i class="fas fa-link mr-1"></i> Enlace
-                                    </a>
-                                    <?php if (in_array($_SESSION['user_rol'], ['super_admin', 'admin'])): ?>
-                                    <a href="index.php?page=sesiones&deactivate=<?= $sesion['id'] ?>" class="bg-red-500 hover:bg-red-700 text-white py-1 px-2 rounded text-sm mr-1" onclick="return confirm('¿Está seguro de finalizar esta sesión?')">
-                                        <i class="fas fa-stop-circle mr-1"></i> Finalizar
-                                    </a>
-                                    <?php endif; ?>
-                                <?php elseif ($sesion['estado'] === 'finalizada'): ?>
-                                    <a href="index.php?page=exportar&sesion_id=<?= $sesion['id'] ?>" class="bg-green-500 hover:bg-green-700 text-white py-1 px-2 rounded text-sm mr-1">
-                                        <i class="fas fa-file-export mr-1"></i> Exportar
-                                    </a>
-                                <?php endif; ?>
-                                
-                                <?php if ($sesion['estado'] !== 'activa' && in_array($_SESSION['user_rol'], ['super_admin', 'admin'])): ?>
-                                    <a href="index.php?page=sesiones&activate=<?= $sesion['id'] ?>" class="bg-yellow-500 hover:bg-yellow-700 text-white py-1 px-2 rounded text-sm" onclick="return confirm('¿Está seguro de activar esta sesión?')">
-                                        <i class="fas fa-play-circle mr-1"></i> Activar
-                                    </a>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
+                        <div class="flex flex-col gap-2">' . $row[5] . '</div>
+                    </div>';
+                }
+            ]);
+            ?>
         <?php endif; ?>
-    </div>
-</div>
+        <?php
+    }
+]);
 
+// Capturar el contenido
+$content = ob_get_clean();
+
+// CSS personalizado
+$customCSS = '
 <style>
 /* Optimizaciones adicionales para pantallas muy pequeñas */
 @media (max-width: 480px) {
@@ -239,36 +253,63 @@
         gap: 0.5rem;
     }
 }
-</style>
+</style>';
 
+// JavaScript personalizado
+$customJS = '
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const formSesion = document.getElementById('formSesion');
-        const btnNuevaSesion = document.getElementById('btnNuevaSesion');
-        const btnCancelar = document.getElementById('btnCancelar');
-        const formTitle = document.getElementById('formTitle');
-        const idInput = document.getElementById('id');
-        const cursoIdSelect = document.getElementById('curso_id');
-        const fechaInput = document.getElementById('fecha');
-        const horaInicioInput = document.getElementById('hora_inicio');
-        const estadoSelect = document.getElementById('estado');
+    document.addEventListener("DOMContentLoaded", function() {
+        const formSesion = document.getElementById("formSesion");
+        const btnNuevaSesion = document.getElementById("btnNuevaSesion");
+        const btnCancelar = document.getElementById("btnCancelar");
+        const formTitle = document.getElementById("formTitle");
+        const idInput = document.getElementById("id");
+        const cursoIdSelect = document.getElementById("curso_id");
+        const fechaInput = document.getElementById("fecha");
+        const horaInicioInput = document.getElementById("hora_inicio");
+        const estadoSelect = document.getElementById("estado");
         
         // Mostrar formulario para nueva sesión
-        btnNuevaSesion.addEventListener('click', function() {
-            formTitle.textContent = 'Nueva Sesión';
-            idInput.value = '';
-            cursoIdSelect.value = '';
-            fechaInput.value = new Date().toISOString().split('T')[0];
-            horaInicioInput.value = '';
-            estadoSelect.value = 'activa';
-            formSesion.classList.remove('hidden');
+        btnNuevaSesion.addEventListener("click", function() {
+            formTitle.textContent = "Nueva Sesión";
+            idInput.value = "";
+            cursoIdSelect.value = "";
+            fechaInput.value = new Date().toISOString().split("T")[0];
+            horaInicioInput.value = "";
+            estadoSelect.value = "activa";
+            formSesion.classList.remove("hidden");
         });
         
         // Ocultar formulario
-        btnCancelar.addEventListener('click', function() {
-            formSesion.classList.add('hidden');
+        btnCancelar.addEventListener("click", function() {
+            formSesion.classList.add("hidden");
         });
-    });
-</script>
+        
+        // Funciones para finalizar y activar sesiones
+        window.finalizarSesion = function(id) {
+            if (confirm("¿Está seguro de finalizar esta sesión?")) {
+                window.location.href = "index.php?page=sesiones&deactivate=" + id;
+            }
+        };
+        
+        window.activarSesion = function(id) {
+            if (confirm("¿Está seguro de activar esta sesión?")) {
+                window.location.href = "index.php?page=sesiones&activate=" + id;
+            }
+        };
+    });' + (!empty($success) ? '
 
-<?php include '../app/views/layouts/footer.php'; ?>
+    // Mostrar mensaje de éxito
+    if (typeof Swal !== "undefined") {
+        Swal.fire({
+            title: "¡Éxito!",
+            text: "' . $success . '",
+            icon: "success",
+            confirmButtonText: "OK"
+        });
+    }' : '') + '
+</script>';
+
+// Incluir el layout base
+include '../app/views/layouts/base.php';
+?>

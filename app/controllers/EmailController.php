@@ -1,129 +1,151 @@
 <?php
-// Incluir PHPMailer
+require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../models/Email.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
-class EmailController {
-    private $db;
+/**
+ * Controlador de Email
+ * Maneja el envío de correos electrónicos del sistema
+ */
+class EmailController extends BaseController {
+    private $emailModel;
     private $config;
     
-    public function __construct($db) {
-        $this->db = $db;
+    public function __construct() {
+        parent::__construct();
+        
+        // Inicializar modelo
+        $this->emailModel = new Email();
+        
+        // Cargar configuración de email
         $this->loadEmailConfig();
     }
     
-    private function loadEmailConfig() {
-        // Cargar configuración de email desde la base de datos
-        $conn = $this->db->connect();
-        $stmt = $conn->prepare("SELECT clave, valor FROM configuracion WHERE clave LIKE 'smtp_%' OR clave LIKE 'email_%'");
-        $stmt->execute();
-        $result = $stmt->get_result();
+    /**
+     * Método principal para manejar las peticiones
+     */
+    public function handleRequest() {
+        $action = $_GET['action'] ?? 'index';
         
-        $this->config = [];
-        while ($row = $result->fetch_assoc()) {
-            $this->config[$row['clave']] = $row['valor'];
-        }
-        
-        // Valores por defecto si no están en la BD
-        $defaults = [
-            'smtp_host' => 'smtp.gmail.com',
-            'smtp_port' => '587',
-            'smtp_username' => '',
-            'smtp_password' => '',
-            'smtp_encryption' => 'tls',
-            'email_from' => 'noreply@universidad.edu',
-            'email_from_name' => 'Sistema de Asistencia - Universidad del Tolima'
-        ];
-        
-        foreach ($defaults as $key => $value) {
-            if (!isset($this->config[$key])) {
-                $this->config[$key] = $value;
-            }
+        switch ($action) {
+            case 'send_attendance':
+                $this->sendAttendanceReport();
+                break;
+            case 'send_notification':
+                $this->sendNotification();
+                break;
+            case 'test_config':
+                $this->testEmailConfig();
+                break;
+            case 'config':
+                $this->configureEmail();
+                break;
+            default:
+                $this->index();
         }
     }
     
-    public function enviarAsistenciaPorCorreo($sesion_id, $formato, $user_id) {
+    /**
+     * Página principal de configuración de email
+     */
+    public function index() {
+        // Verificar permisos - solo super_admin puede configurar email
+        if (!$this->hasPermission('email_config')) {
+            $this->redirectUnauthorized();
+            return;
+        }
+        
         try {
-            // Obtener información del usuario
-            $conn = $this->db->connect();
-            $stmt = $conn->prepare("SELECT email, nombre FROM usuarios WHERE id = ?");
-            $stmt->bind_param("i", $user_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $usuario = $result->fetch_assoc();
-            $stmt->close();
+            $this->render('admin/email_config', [
+                'page_title' => 'Configuración de Email',
+                'config' => $this->config,
+                'can_test' => $this->hasPermission('email_test')
+            ]);
             
-            if (!$usuario || empty($usuario['email'])) {
-                return ['success' => false, 'message' => 'No se encontró el correo del usuario'];
-            }
-            
-            // Obtener datos de la sesión
-            $stmt = $conn->prepare("
-                SELECT s.*, c.nombre as curso_nombre, c.codigo, c.programa, c.area, c.semestre, c.grupo, c.aula, c.sede
-                FROM sesiones s
-                JOIN cursos c ON s.curso_id = c.id
-                WHERE s.id = ?
-            ");
-            $stmt->bind_param("i", $sesion_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $sesion = $result->fetch_assoc();
-            $stmt->close();
-            
+        } catch (Exception $e) {
+            $this->handleEmailError($e, 'Error al cargar la configuración de email');
+        }
+    }
+    
+    /**
+     * Enviar reporte de asistencia por correo
+     */
+    public function sendAttendanceReport() {
+        // Verificar permisos
+        if (!$this->hasPermission('reportes_email')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para enviar reportes por email'], 403);
+            return;
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+        
+        // Verificar token CSRF
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $this->jsonResponse(['error' => 'Token de seguridad inválido'], 400);
+            return;
+        }
+        
+        $sesion_id = intval($_POST['sesion_id'] ?? 0);
+        $formato = $this->sanitizeInput($_POST['formato'] ?? 'excel');
+        $email_destino = $this->sanitizeInput($_POST['email'] ?? '');
+        
+        // Validar datos
+        if ($sesion_id <= 0) {
+            $this->jsonResponse(['error' => 'ID de sesión no válido'], 400);
+            return;
+        }
+        
+        if (empty($email_destino) || !filter_var($email_destino, FILTER_VALIDATE_EMAIL)) {
+            $this->jsonResponse(['error' => 'Email de destino no válido'], 400);
+            return;
+        }
+        
+        if (!in_array($formato, ['excel', 'pdf'])) {
+            $this->jsonResponse(['error' => 'Formato no válido'], 400);
+            return;
+        }
+        
+        try {
+            // Verificar que la sesión existe y el usuario tiene permisos
+            $sesion = $this->emailModel->getSessionData($sesion_id);
             if (!$sesion) {
-                return ['success' => false, 'message' => 'Sesión no encontrada'];
+                $this->jsonResponse(['error' => 'Sesión no encontrada'], 404);
+                return;
             }
             
-            // Verificar permisos (profesor solo puede ver sus propias sesiones)
-            if ($_SESSION['user_rol'] === 'profesor') {
-                $stmt = $conn->prepare("SELECT profesor_id FROM cursos WHERE id = ?");
-                $stmt->bind_param("i", $sesion['curso_id']);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                $curso = $result->fetch_assoc();
-                $stmt->close();
-                
-                if (!$curso || $curso['profesor_id'] != $user_id) {
-                    return ['success' => false, 'message' => 'No tienes permisos para esta sesión'];
+            // Verificar permisos específicos para profesores
+            if ($this->currentUser['rol'] === 'profesor') {
+                if (!$this->emailModel->canUserAccessSession($this->currentUser['id'], $sesion_id)) {
+                    $this->jsonResponse(['error' => 'No tienes permisos para esta sesión'], 403);
+                    return;
                 }
             }
             
             // Obtener datos de asistencia
-            $stmt = $conn->prepare("
-                SELECT a.*, e.nombre, e.documento, e.codigo, e.telefono, e.direccion, e.correo
-                FROM asistencias a
-                JOIN estudiantes e ON a.estudiante_id = e.id
-                WHERE a.sesion_id = ?
-                ORDER BY a.hora_registro
-            ");
-            $stmt->bind_param("i", $sesion_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            $asistencias = [];
-            while ($row = $result->fetch_assoc()) {
-                $asistencias[] = $row;
-            }
-            $stmt->close();
+            $asistencias = $this->emailModel->getAttendanceData($sesion_id);
             
             // Generar archivo según formato
             if ($formato === 'pdf') {
-                $archivo = $this->generarPDF($sesion, $asistencias);
+                $archivo = $this->generatePDFReport($sesion, $asistencias);
                 $nombreArchivo = "asistencia_sesion_{$sesion_id}.pdf";
                 $tipoMime = 'application/pdf';
             } else {
-                $archivo = $this->generarExcel($sesion, $asistencias);
-                $nombreArchivo = "asistencia_sesion_{$sesion_id}.xls";
-                $tipoMime = 'application/vnd.ms-excel';
+                $archivo = $this->generateExcelReport($sesion, $asistencias);
+                $nombreArchivo = "asistencia_sesion_{$sesion_id}.xlsx";
+                $tipoMime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
             }
             
             // Enviar correo
-            $resultado = $this->enviarCorreo(
-                $usuario['email'],
-                $usuario['nombre'],
+            $resultado = $this->sendEmail(
+                $email_destino,
+                $this->currentUser['nombre'],
                 $sesion,
                 $archivo,
                 $nombreArchivo,
@@ -131,17 +153,267 @@ class EmailController {
                 $formato
             );
             
-            return $resultado;
+            if ($resultado['success']) {
+                $this->logActivity('email_sent', $sesion_id, null, [
+                    'tipo' => 'reporte_asistencia',
+                    'formato' => $formato,
+                    'destinatario' => $email_destino
+                ]);
+                
+                $this->jsonResponse([
+                    'success' => true,
+                    'message' => 'Reporte enviado correctamente a ' . $email_destino
+                ]);
+            } else {
+                $this->jsonResponse(['error' => $resultado['message']], 500);
+            }
             
         } catch (Exception $e) {
-            error_log('Error en enviarAsistenciaPorCorreo: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error interno del servidor'];
+            $this->handleEmailError($e, 'Error al enviar el reporte por email');
         }
     }
     
-    private function generarPDF($sesion, $asistencias) {
-        // Para simplicidad, generamos HTML que se puede convertir a PDF
-        // En un entorno de producción, usarías una librería como TCPDF o DOMPDF
+    /**
+     * Enviar notificación por correo
+     */
+    public function sendNotification() {
+        // Verificar permisos
+        if (!$this->hasPermission('notifications_send')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para enviar notificaciones'], 403);
+            return;
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+        
+        // Verificar token CSRF
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $this->jsonResponse(['error' => 'Token de seguridad inválido'], 400);
+            return;
+        }
+        
+        $data = [
+            'destinatarios' => $_POST['destinatarios'] ?? [],
+            'asunto' => $this->sanitizeInput($_POST['asunto'] ?? ''),
+            'mensaje' => $this->sanitizeInput($_POST['mensaje'] ?? ''),
+            'tipo' => $this->sanitizeInput($_POST['tipo'] ?? 'general')
+        ];
+        
+        // Validar datos
+        $errors = [];
+        
+        if (empty($data['destinatarios']) || !is_array($data['destinatarios'])) {
+            $errors[] = 'Debe seleccionar al menos un destinatario';
+        }
+        
+        if (empty($data['asunto'])) {
+            $errors[] = 'El asunto es obligatorio';
+        }
+        
+        if (empty($data['mensaje'])) {
+            $errors[] = 'El mensaje es obligatorio';
+        }
+        
+        if (!empty($errors)) {
+            $this->jsonResponse(['errors' => $errors], 400);
+            return;
+        }
+        
+        try {
+            $enviados = 0;
+            $errores = [];
+            
+            foreach ($data['destinatarios'] as $email) {
+                $email = filter_var(trim($email), FILTER_VALIDATE_EMAIL);
+                if (!$email) {
+                    $errores[] = "Email inválido: $email";
+                    continue;
+                }
+                
+                $resultado = $this->sendNotificationEmail(
+                    $email,
+                    $data['asunto'],
+                    $data['mensaje'],
+                    $data['tipo']
+                );
+                
+                if ($resultado['success']) {
+                    $enviados++;
+                } else {
+                    $errores[] = "Error enviando a $email: " . $resultado['message'];
+                }
+            }
+            
+            $this->logActivity('notifications_sent', null, null, [
+                'tipo' => $data['tipo'],
+                'destinatarios_total' => count($data['destinatarios']),
+                'enviados' => $enviados,
+                'errores' => count($errores)
+            ]);
+            
+            if ($enviados > 0) {
+                $message = "Se enviaron $enviados notificaciones correctamente";
+                if (!empty($errores)) {
+                    $message .= ". Errores: " . implode(', ', $errores);
+                }
+                $this->jsonResponse(['success' => true, 'message' => $message]);
+            } else {
+                $this->jsonResponse(['error' => 'No se pudo enviar ninguna notificación'], 500);
+            }
+            
+        } catch (Exception $e) {
+            $this->handleEmailError($e, 'Error al enviar notificaciones');
+        }
+    }
+    
+    /**
+     * Probar configuración de email
+     */
+    public function testEmailConfig() {
+        // Verificar permisos
+        if (!$this->hasPermission('email_test')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para probar la configuración'], 403);
+            return;
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+        
+        $email_test = filter_var($_POST['email_test'] ?? '', FILTER_VALIDATE_EMAIL);
+        if (!$email_test) {
+            $this->jsonResponse(['error' => 'Email de prueba no válido'], 400);
+            return;
+        }
+        
+        try {
+            $resultado = $this->sendTestEmail($email_test);
+            
+            if ($resultado['success']) {
+                $this->logActivity('email_test', null, null, ['email_test' => $email_test]);
+                $this->jsonResponse(['success' => true, 'message' => 'Email de prueba enviado correctamente']);
+            } else {
+                $this->jsonResponse(['error' => $resultado['message']], 500);
+            }
+            
+        } catch (Exception $e) {
+            $this->handleEmailError($e, 'Error al probar la configuración de email');
+        }
+    }
+    
+    /**
+     * Configurar parámetros de email
+     */
+    public function configureEmail() {
+        // Verificar permisos
+        if (!$this->hasPermission('email_config')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para configurar email'], 403);
+            return;
+        }
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+        
+        // Verificar token CSRF
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            $this->jsonResponse(['error' => 'Token de seguridad inválido'], 400);
+            return;
+        }
+        
+        $config = [
+            'smtp_host' => $this->sanitizeInput($_POST['smtp_host'] ?? ''),
+            'smtp_port' => intval($_POST['smtp_port'] ?? 587),
+            'smtp_username' => $this->sanitizeInput($_POST['smtp_username'] ?? ''),
+            'smtp_password' => $_POST['smtp_password'] ?? '', // No sanitizar password
+            'smtp_encryption' => $this->sanitizeInput($_POST['smtp_encryption'] ?? 'tls'),
+            'email_from' => $this->sanitizeInput($_POST['email_from'] ?? ''),
+            'email_from_name' => $this->sanitizeInput($_POST['email_from_name'] ?? '')
+        ];
+        
+        // Validar configuración
+        $errors = [];
+        
+        if (empty($config['smtp_host'])) {
+            $errors[] = 'El servidor SMTP es obligatorio';
+        }
+        
+        if ($config['smtp_port'] <= 0 || $config['smtp_port'] > 65535) {
+            $errors[] = 'El puerto SMTP debe estar entre 1 y 65535';
+        }
+        
+        if (empty($config['email_from']) || !filter_var($config['email_from'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'El email remitente no es válido';
+        }
+        
+        if (!in_array($config['smtp_encryption'], ['tls', 'ssl', ''])) {
+            $errors[] = 'El tipo de encriptación no es válido';
+        }
+        
+        if (!empty($errors)) {
+            $this->jsonResponse(['errors' => $errors], 400);
+            return;
+        }
+        
+        try {
+            $result = $this->emailModel->updateConfig($config);
+            
+            if (isset($result['errors'])) {
+                $this->jsonResponse(['errors' => $result['errors']], 400);
+            } else {
+                // Recargar configuración
+                $this->loadEmailConfig();
+                
+                $this->logActivity('email_config_updated', null, null, $config);
+                $this->jsonResponse([
+                    'success' => true,
+                    'message' => 'Configuración de email actualizada correctamente'
+                ]);
+            }
+            
+        } catch (Exception $e) {
+            $this->handleEmailError($e, 'Error al actualizar la configuración de email');
+        }
+    }
+    
+    /**
+     * Cargar configuración de email desde la base de datos
+     */
+    private function loadEmailConfig() {
+        try {
+            $this->config = $this->emailModel->getConfig();
+            
+            // Valores por defecto si no están en la BD
+            $defaults = [
+                'smtp_host' => 'smtp.gmail.com',
+                'smtp_port' => '587',
+                'smtp_username' => '',
+                'smtp_password' => '',
+                'smtp_encryption' => 'tls',
+                'email_from' => 'noreply@universidad.edu',
+                'email_from_name' => 'Sistema de Asistencia - Universidad del Tolima'
+            ];
+            
+            foreach ($defaults as $key => $value) {
+                if (!isset($this->config[$key])) {
+                    $this->config[$key] = $value;
+                }
+            }
+            
+        } catch (Exception $e) {
+            error_log('Error cargando configuración de email: ' . $e->getMessage());
+            $this->config = [];
+        }
+    }
+    
+    /**
+     * Generar reporte PDF
+     */
+    private function generatePDFReport($sesion, $asistencias) {
         ob_start();
         ?>
         <!DOCTYPE html>
@@ -205,7 +477,10 @@ class EmailController {
         return ob_get_clean();
     }
     
-    private function generarExcel($sesion, $asistencias) {
+    /**
+     * Generar reporte Excel
+     */
+    private function generateExcelReport($sesion, $asistencias) {
         ob_start();
         
         // Generar HTML con formato Excel
@@ -260,7 +535,10 @@ class EmailController {
         return ob_get_clean();
     }
     
-    private function enviarCorreo($email, $nombre, $sesion, $archivo, $nombreArchivo, $tipoMime, $formato) {
+    /**
+     * Enviar email con reporte de asistencia
+     */
+    private function sendEmail($email, $nombre, $sesion, $archivo, $nombreArchivo, $tipoMime, $formato) {
         try {
             $mail = new PHPMailer(true);
             
@@ -312,6 +590,138 @@ class EmailController {
         } catch (Exception $e) {
             error_log('Error enviando correo: ' . $e->getMessage());
             return ['success' => false, 'message' => 'Error al enviar el correo: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Enviar email de notificación
+     */
+    private function sendNotificationEmail($email, $asunto, $mensaje, $tipo) {
+        try {
+            $mail = new PHPMailer(true);
+            
+            // Configuración del servidor SMTP
+            $mail->isSMTP();
+            $mail->Host = $this->config['smtp_host'];
+            $mail->SMTPAuth = true;
+            $mail->Username = $this->config['smtp_username'];
+            $mail->Password = $this->config['smtp_password'];
+            $mail->SMTPSecure = $this->config['smtp_encryption'];
+            $mail->Port = (int)$this->config['smtp_port'];
+            $mail->CharSet = 'UTF-8';
+            
+            // Configuración del remitente
+            $mail->setFrom($this->config['email_from'], $this->config['email_from_name']);
+            
+            // Destinatario
+            $mail->addAddress($email);
+            
+            // Contenido del email
+            $mail->isHTML(true);
+            $mail->Subject = $asunto;
+            
+            $contenido = "<html><body>";
+            $contenido .= "<div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;'>";
+            $contenido .= "<h2 style='color: #333;'>" . htmlspecialchars($asunto) . "</h2>";
+            $contenido .= "<div style='background-color: #f9f9f9; padding: 20px; border-radius: 5px;'>";
+            $contenido .= nl2br(htmlspecialchars($mensaje));
+            $contenido .= "</div>";
+            $contenido .= "<hr style='margin: 20px 0; border: none; border-top: 1px solid #ddd;'>";
+            $contenido .= "<p style='color: #666; font-size: 12px;'>";
+            $contenido .= "Este mensaje fue enviado desde el Sistema de Gestión de Asistencia<br>";
+            $contenido .= "Universidad del Tolima";
+            $contenido .= "</p>";
+            $contenido .= "</div>";
+            $contenido .= "</body></html>";
+            
+            $mail->Body = $contenido;
+            
+            // Enviar email
+            $mail->send();
+            return ['success' => true, 'message' => 'Notificación enviada exitosamente'];
+            
+        } catch (Exception $e) {
+            error_log('Error enviando notificación: ' . $e->getMessage());
+            return ['success' => false, 'message' => 'Error al enviar la notificación: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Enviar email de prueba
+     */
+    private function sendTestEmail($email) {
+        try {
+            $mail = new PHPMailer(true);
+            
+            // Configuración del servidor SMTP
+            $mail->isSMTP();
+            $mail->Host = $this->config['smtp_host'];
+            $mail->SMTPAuth = true;
+            $mail->Username = $this->config['smtp_username'];
+            $mail->Password = $this->config['smtp_password'];
+            $mail->SMTPSecure = $this->config['smtp_encryption'];
+            $mail->Port = (int)$this->config['smtp_port'];
+            $mail->CharSet = 'UTF-8';
+            
+            // Configuración del remitente
+            $mail->setFrom($this->config['email_from'], $this->config['email_from_name']);
+            
+            // Destinatario
+            $mail->addAddress($email);
+            
+            // Contenido del email
+            $mail->isHTML(true);
+            $mail->Subject = 'Prueba de Configuración - Sistema de Asistencia';
+            
+            $mensaje = "<html><body>";
+            $mensaje .= "<h3>Prueba de Configuración de Email</h3>";
+            $mensaje .= "<p>Este es un email de prueba para verificar que la configuración SMTP está funcionando correctamente.</p>";
+            $mensaje .= "<p><strong>Fecha y hora:</strong> " . date('d/m/Y H:i:s') . "</p>";
+            $mensaje .= "<p><strong>Usuario que realizó la prueba:</strong> " . htmlspecialchars($this->currentUser['nombre']) . "</p>";
+            $mensaje .= "<p>Si recibiste este email, la configuración está funcionando correctamente.</p>";
+            $mensaje .= "<hr>";
+            $mensaje .= "<p style='color: #666; font-size: 12px;'>Sistema de Gestión de Asistencia - Universidad del Tolima</p>";
+            $mensaje .= "</body></html>";
+            
+            $mail->Body = $mensaje;
+            
+            // Enviar email
+            $mail->send();
+            return ['success' => true, 'message' => 'Email de prueba enviado exitosamente'];
+            
+        } catch (Exception $e) {
+            error_log('Error enviando email de prueba: ' . $e->getMessage());
+            return ['success' => false, 'message' => 'Error al enviar email de prueba: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Verificar si el usuario tiene un permiso específico
+     */
+    protected function hasPermission($permission) {
+        return $this->middlewareManager->checkPermission($permission);
+    }
+    
+    /**
+     * Redirigir cuando no se tienen permisos
+     */
+    private function redirectUnauthorized() {
+        $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
+        $this->redirect('index.php?page=login&error=permissions');
+    }
+    
+    /**
+     * Manejar errores
+     */
+    protected function handleEmailError($exception, $userMessage = 'Ha ocurrido un error') {
+        // Log del error
+        error_log($exception->getMessage());
+        
+        if ($this->isAjaxRequest()) {
+            $this->jsonResponse(['error' => $userMessage], 500);
+        } else {
+            $this->setFlashMessage($userMessage, 'error');
+            $this->redirect('index.php?page=dashboard');
         }
     }
 }

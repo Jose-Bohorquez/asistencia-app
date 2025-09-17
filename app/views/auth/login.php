@@ -1,6 +1,21 @@
-<?php include '../app/views/layouts/header.php'; ?>
+<?php
+// Incluir componentes necesarios
+require_once '../app/views/components/form.php';
+require_once '../app/views/components/button.php';
+require_once '../app/views/components/alert.php';
+require_once '../app/views/components/card.php';
 
-<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4 sm:px-6 lg:px-8">
+// Configuración del layout
+$pageTitle = 'Iniciar Sesión - Sistema de Asistencia';
+$bodyClass = 'min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100';
+$showNavbar = false;
+$showFooter = false;
+
+// Iniciar captura de contenido
+ob_start();
+?>
+
+<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
     <div class="max-w-md w-full space-y-8">
         <!-- Logo y título -->
         <div class="text-center">
@@ -16,68 +31,71 @@
         </div>
 
         <!-- Formulario de login -->
-        <div class="bg-white rounded-xl shadow-2xl overflow-hidden">
-            <div class="px-8 py-8">
-                <?php if (!empty($error)): ?>
-                    <div class="bg-red-50 border-l-4 border-red-400 p-4 mb-6 rounded-r-lg">
-                        <div class="flex">
-                            <div class="flex-shrink-0">
-                                <i class="fas fa-exclamation-circle text-red-400"></i>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm text-red-700"><?= $error ?></p>
-                            </div>
-                        </div>
-                    </div>
-                <?php endif; ?>
-                
+        <?php
+        echo renderCard([
+            'content' => function() use ($error) {
+                // El error se mostrará con SweetAlert2 en JavaScript
+                // if (!empty($error)) {
+                //     echo renderAlert([
+                //         'type' => 'error',
+                //         'message' => $error,
+                //         'icon' => 'fas fa-exclamation-circle',
+                //         'dismissible' => false
+                //     ]);
+                // }
+                ?>
                 <form method="POST" action="index.php?page=login" class="space-y-6">
-                    <div>
-                        <label for="username" class="block text-sm font-medium text-gray-700 mb-2">
-                            <i class="fas fa-user mr-2 text-gray-400"></i>Usuario
-                        </label>
-                        <input type="text" 
-                               id="username" 
-                               name="username" 
-                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 ease-in-out hover:border-gray-400" 
-                               placeholder="Ingrese su usuario"
-                               required>
-                    </div>
+                    <?php
+                    // Token CSRF
+                    echo '<input type="hidden" name="csrf_token" value="' . ($_SESSION['csrf_token'] ?? '') . '">';
                     
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700 mb-2">
-                            <i class="fas fa-lock mr-2 text-gray-400"></i>Contraseña
-                        </label>
-                        <input type="password" 
-                               id="password" 
-                               name="password" 
-                               class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition duration-200 ease-in-out hover:border-gray-400" 
-                               placeholder="Ingrese su contraseña"
-                               required>
-                    </div>
+                    // Campo de usuario
+                    echo renderInput([
+                        'name' => 'username',
+                        'label' => 'Usuario',
+                        'type' => 'text',
+                        'icon' => 'fas fa-user',
+                        'placeholder' => 'Ingrese su usuario',
+                        'required' => true
+                    ]);
                     
-                    <div>
-                        <button type="submit" 
-                                class="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-200 ease-in-out transform hover:scale-105 shadow-lg">
-                            <span class="absolute left-0 inset-y-0 flex items-center pl-3">
-                                <i class="fas fa-sign-in-alt text-blue-300 group-hover:text-blue-200"></i>
-                            </span>
-                            Iniciar Sesión
-                        </button>
-                    </div>
+                    // Campo de contraseña
+                    echo renderInput([
+                        'name' => 'password',
+                        'label' => 'Contraseña',
+                        'type' => 'password',
+                        'icon' => 'fas fa-lock',
+                        'placeholder' => 'Ingrese su contraseña',
+                        'required' => true
+                    ]);
+                    
+                    // Botón de envío
+                    echo renderButton('Iniciar Sesión', [
+                        'type' => 'primary',
+                        'buttonType' => 'submit',
+                        'size' => 'lg',
+                        'icon' => 'fas fa-sign-in-alt',
+                        'fullWidth' => true,
+                        'extraClasses' => 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 transform hover:scale-105 shadow-lg'
+                    ]);
+                    ?>
                 </form>
-            </div>
-            
-            <!-- Footer del formulario -->
-            <div class="px-8 py-4 bg-gray-50 border-t border-gray-200">
-                <div class="text-center">
-                    <p class="text-xs text-gray-500">
-                        <i class="fas fa-shield-alt mr-1"></i>
-                        Acceso seguro al sistema
-                    </p>
+                
+                <!-- Footer del formulario -->
+                <div class="mt-6 pt-4 border-t border-gray-200">
+                    <div class="text-center">
+                        <p class="text-xs text-gray-500">
+                            <i class="fas fa-shield-alt mr-1"></i>
+                            Acceso seguro al sistema
+                        </p>
+                    </div>
                 </div>
-            </div>
-        </div>
+                <?php
+            },
+            'class' => 'bg-white rounded-xl shadow-2xl overflow-hidden',
+            'padding' => 'px-8 py-8'
+        ]);
+        ?>
         
         <!-- Información adicional -->
         <div class="text-center">
@@ -91,7 +109,11 @@
     </div>
 </div>
 
-<style>
+<?php
+$content = ob_get_clean();
+
+// CSS personalizado para el login
+$customCSS[] = '
 /* Animaciones adicionales */
 @keyframes fadeInUp {
     from {
@@ -142,6 +164,30 @@ button:hover {
         width: 5rem !important;
     }
 }
-</style>
+';
 
-<?php include '../app/views/layouts/footer.php'; ?>
+// JavaScript personalizado para mostrar errores con SweetAlert2
+$customJS[] = '
+<script>
+// Mostrar error con SweetAlert2 si existe
+<?php if (!empty($error)): ?>
+Swal.fire({
+    icon: "error",
+    title: "Error de autenticación",
+    text: "<?= addslashes($error) ?>",
+    confirmButtonText: "Intentar de nuevo",
+    confirmButtonColor: "#dc2626",
+    showClass: {
+        popup: "animate__animated animate__fadeInDown"
+    },
+    hideClass: {
+        popup: "animate__animated animate__fadeOutUp"
+    }
+});
+<?php endif; ?>
+</script>
+';
+
+// Incluir el layout base
+require_once '../app/views/layouts/base.php';
+?>

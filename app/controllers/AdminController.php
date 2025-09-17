@@ -1,530 +1,481 @@
 <?php
-class AdminController {
-    private $db;
+require_once __DIR__ . '/BaseController.php';
+require_once __DIR__ . '/../models/Usuario.php';
+require_once __DIR__ . '/../models/Curso.php';
+require_once __DIR__ . '/../models/Programa.php';
+require_once __DIR__ . '/../models/Estudiante.php';
+require_once __DIR__ . '/../models/Sesion.php';
+require_once __DIR__ . '/../models/Asistencia.php';
+
+/**
+ * Controlador de Administración
+ * Maneja el dashboard y funciones administrativas generales
+ */
+class AdminController extends BaseController {
+    private $usuarioModel;
+    private $cursoModel;
+    private $programaModel;
+    private $estudianteModel;
+    private $sesionModel;
+    private $asistenciaModel;
     
-    public function __construct($db) {
-        $this->db = $db;
+    public function __construct() {
+        parent::__construct();
+        
+        // Inicializar modelos
+        $this->usuarioModel = new Usuario();
+        $this->cursoModel = new Curso();
+        $this->programaModel = new Programa();
+        $this->estudianteModel = new Estudiante();
+        $this->sesionModel = new Sesion();
+        $this->asistenciaModel = new Asistencia();
     }
     
+    /**
+     * Método principal para manejar las peticiones
+     */
+    public function handleRequest() {
+        $action = $_GET['action'] ?? 'dashboard';
+        
+        switch ($action) {
+            case 'dashboard':
+                $this->dashboard();
+                break;
+            case 'cursos':
+                $this->cursos();
+                break;
+            case 'exportar':
+                $this->exportar();
+                break;
+            default:
+                $this->dashboard();
+        }
+    }
+    
+    /**
+     * Mostrar dashboard principal
+     */
     public function dashboard() {
-        // Verificar si el usuario es administrador
-        if (!in_array($_SESSION['user_rol'], ['super_admin', 'admin', 'profesor'])) {
-            header('Location: index.php?page=dashboard');
-            exit;
+        // Verificar permisos básicos de acceso
+        if (!$this->hasPermission('dashboard_access')) {
+            $this->redirectUnauthorized();
+            return;
         }
         
-        $conn = $this->db->getConnection();
-        
-        // Obtener estadísticas
-        $totalCursos = 0;
-        $totalSesiones = 0;
-        $totalEstudiantes = 0;
-        if ($_SESSION['user_rol'] === 'profesor') {
-            // Cursos del profesor
-            $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos WHERE profesor_id = ?");
-            $stmt->bind_param("i", $_SESSION['user_id']);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalCursos = $row['total'];
-            }
-            $stmt->close();
-            // Sesiones del profesor
-            $stmt = $conn->prepare("SELECT COUNT(*) as total FROM sesiones s JOIN cursos c ON s.curso_id = c.id WHERE c.profesor_id = ?");
-            $stmt->bind_param("i", $_SESSION['user_id']);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalSesiones = $row['total'];
-            }
-            $stmt->close();
-            // Estudiantes de los cursos del profesor
-            $stmt = $conn->prepare("SELECT COUNT(DISTINCT ce.estudiante_id) as total FROM cursos c JOIN cursos_estudiantes ce ON c.id = ce.curso_id WHERE c.profesor_id = ?");
-            $stmt->bind_param("i", $_SESSION['user_id']);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalEstudiantes = $row['total'];
-            }
-            $stmt->close();
-        } else {
-            $result = $conn->query("SELECT COUNT(*) as total FROM cursos");
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalCursos = $row['total'];
-            }
-            $result = $conn->query("SELECT COUNT(*) as total FROM sesiones");
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalSesiones = $row['total'];
-            }
-            $result = $conn->query("SELECT COUNT(*) as total FROM estudiantes");
-            if ($result) {
-                $row = $result->fetch_assoc();
-                $totalEstudiantes = $row['total'];
-            }
+        try {
+            $stats = $this->getDashboardStats();
+            $sesionesActivas = $this->getSesionesActivas();
+            $recentActivity = $this->getRecentActivity();
+            
+            $this->render('admin/dashboard', [
+                'page_title' => 'Dashboard',
+                'stats' => $stats,
+                'sesiones_activas' => $sesionesActivas,
+                'recent_activity' => $recentActivity
+            ]);
+            
+        } catch (Exception $e) {
+            $this->handleAdminError($e, 'Error al cargar el dashboard');
         }
-        
-        // Obtener sesiones activas
-        $sesionesActivas = [];
-        if ($_SESSION['user_rol'] === 'profesor') {
-            $query = "
-                SELECT s.*, c.nombre as curso_nombre, c.programa, c.area, c.semestre, c.grupo
-                FROM sesiones s
-                JOIN cursos c ON s.curso_id = c.id
-                WHERE s.estado = 'activa' AND c.profesor_id = ?
-                ORDER BY s.fecha DESC, s.hora_inicio DESC
-            ";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $_SESSION['user_id']);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $sesionesActivas[] = $row;
-            }
-            $stmt->close();
-        } else {
-            $query = "
-                SELECT s.*, c.nombre as curso_nombre, c.programa, c.area, c.semestre, c.grupo
-                FROM sesiones s
-                JOIN cursos c ON s.curso_id = c.id
-                WHERE s.estado = 'activa'
-                ORDER BY s.fecha DESC, s.hora_inicio DESC
-            ";
-            $result = $conn->query($query);
-            if ($result) {
-                while ($row = $result->fetch_assoc()) {
-                    $sesionesActivas[] = $row;
-                }
-            }
-        }
-        
-        // Mostrar vista del dashboard
-        include '../app/views/admin/dashboard.php';
     }
     
+    /**
+     * Gestión de cursos
+     */
     public function cursos() {
         // Verificar permisos
-        if (!in_array($_SESSION['user_rol'], ['super_admin', 'admin', 'profesor'])) {
-            header('Location: index.php?page=dashboard');
-            exit;
+        if (!$this->hasPermission('cursos_read')) {
+            $this->redirectUnauthorized();
+            return;
         }
         
-        $conn = $this->db->getConnection();
         $error = '';
         $success = '';
         
-        // Procesar formulario de creación/edición de curso
+        // Procesar formulario
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
-            $codigo = $_POST['codigo'] ?? '';
-            $nombre = $_POST['nombre'] ?? '';
-            $programa_id = intval($_POST['programa_id'] ?? 0);
-            $area = $_POST['area'] ?? '';
-            $semestre = intval($_POST['semestre'] ?? 0);
-            $grupo = intval($_POST['grupo'] ?? 0);
-            $aula = $_POST['aula'] ?? '';
-            $sede = $_POST['sede'] ?? '';
+            $result = $this->processCursoForm();
             
-            if (empty($codigo) || empty($nombre) || $programa_id <= 0) {
-                $error = 'Por favor, complete los campos obligatorios.';
+            if (isset($result['error'])) {
+                $error = $result['error'];
             } else {
-                // Asignar profesor_id según el rol
-                $profesor_id = null;
-                if ($_SESSION['user_rol'] === 'profesor') {
-                    $profesor_id = $_SESSION['user_id'];
-                } elseif (isset($_POST['profesor_id']) && intval($_POST['profesor_id']) > 0) {
-                    $profesor_id = intval($_POST['profesor_id']);
-                }
-                
-                if ($id > 0) {
-                    // Verificar permisos para editar
-                    if ($_SESSION['user_rol'] === 'profesor') {
-                        $stmt = $conn->prepare("SELECT profesor_id FROM cursos WHERE id = ?");
-                        $stmt->bind_param("i", $id);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        $curso = $result->fetch_assoc();
-                        $stmt->close();
-                        
-                        if (!$curso || $curso['profesor_id'] != $_SESSION['user_id']) {
-                            $error = 'No tienes permisos para editar este curso.';
-                        }
-                    }
-                    
-                    if (empty($error)) {
-                        // Verificar si el código ya existe en otro curso
-                        $stmt = $conn->prepare("SELECT id FROM cursos WHERE codigo = ? AND id != ?");
-                        $stmt->bind_param("si", $codigo, $id);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        
-                        if ($result->num_rows > 0) {
-                            $error = 'Ya existe un curso con ese código.';
-                            $stmt->close();
-                        } else {
-                            $stmt->close();
-                            
-                            // Obtener el nombre del programa
-                            $stmt = $conn->prepare("SELECT nombre FROM programas WHERE id = ?");
-                            $stmt->bind_param("i", $programa_id);
-                            $stmt->execute();
-                            $result = $stmt->get_result();
-                            $programa_nombre = '';
-                            if ($result->num_rows > 0) {
-                                $programa_row = $result->fetch_assoc();
-                                $programa_nombre = $programa_row['nombre'];
-                            }
-                            $stmt->close();
-                            
-                            // Actualizar curso
-                            $stmt = $conn->prepare("
-                                UPDATE cursos 
-                                SET codigo = ?, nombre = ?, programa_id = ?, programa = ?, area = ?, semestre = ?, grupo = ?, aula = ?, sede = ?, profesor_id = ?
-                                WHERE id = ?
-                            ");
-                            $stmt->bind_param("ssissssssii", $codigo, $nombre, $programa_id, $programa_nombre, $area, $semestre, $grupo, $aula, $sede, $profesor_id, $id);
-                            $stmt->execute();
-                            $stmt->close();
-                            
-                            // Redirigir con mensaje de éxito para evitar duplicación
-                            $_SESSION['curso_success'] = 'Curso actualizado correctamente.';
-                            header('Location: index.php?page=cursos');
-                            exit;
-                        }
-                    }
-                } else {
-                    // Verificar si el código ya existe
-                    $stmt = $conn->prepare("SELECT id FROM cursos WHERE codigo = ?");
-                    $stmt->bind_param("s", $codigo);
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-                    
-                    if ($result->num_rows > 0) {
-                        $error = 'Ya existe un curso con ese código.';
-                        $stmt->close();
-                    } else {
-                        $stmt->close();
-                        
-                        // Obtener el nombre del programa
-                        $stmt = $conn->prepare("SELECT nombre FROM programas WHERE id = ?");
-                        $stmt->bind_param("i", $programa_id);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        $programa_nombre = '';
-                        if ($result->num_rows > 0) {
-                            $programa_row = $result->fetch_assoc();
-                            $programa_nombre = $programa_row['nombre'];
-                        }
-                        $stmt->close();
-                        
-                        // Crear nuevo curso
-                        $stmt = $conn->prepare("
-                            INSERT INTO cursos (codigo, nombre, programa_id, programa, area, semestre, grupo, aula, sede, profesor_id)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ");
-                        $stmt->bind_param("ssissssssi", $codigo, $nombre, $programa_id, $programa_nombre, $area, $semestre, $grupo, $aula, $sede, $profesor_id);
-                        $stmt->execute();
-                        $stmt->close();
-                        
-                        // Redirigir con mensaje de éxito para evitar duplicación
-                        $_SESSION['curso_success'] = 'Curso creado correctamente.';
-                        header('Location: index.php?page=cursos');
-                        exit;
-                    }
-                }
+                $success = $result['success'];
+                // Redirigir para evitar reenvío del formulario
+                $this->setFlashMessage($success, 'success');
+                $this->redirect('index.php?page=cursos');
+                return;
             }
         }
         
-        // Eliminar curso
-        if (isset($_GET['delete']) && intval($_GET['delete']) > 0) {
-            $id = intval($_GET['delete']);
+        try {
+            // Obtener cursos según el rol
+            $cursos = $this->getCursosByRole();
+            $programas = $this->programaModel->getAll(['activo' => 1]);
+            $profesores = $this->usuarioModel->getByRole('profesor');
             
-            // Verificar permisos para eliminar
-            if ($_SESSION['user_rol'] === 'profesor') {
-                $stmt = $conn->prepare("SELECT profesor_id FROM cursos WHERE id = ?");
-                $stmt->bind_param("i", $id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                $curso = $result->fetch_assoc();
-                $stmt->close();
-                
-                if (!$curso || $curso['profesor_id'] != $_SESSION['user_id']) {
-                    $error = 'No tienes permisos para eliminar este curso.';
-                }
-            }
+            $this->render('admin/cursos', [
+                'page_title' => 'Gestión de Cursos',
+                'cursos' => $cursos,
+                'programas' => $programas,
+                'profesores' => $profesores,
+                'error' => $error,
+                'success' => $success,
+                'can_create' => $this->hasPermission('cursos_create'),
+                'can_edit' => $this->hasPermission('cursos_update'),
+                'can_delete' => $this->hasPermission('cursos_delete')
+            ]);
             
-            if (empty($error)) {
-                $stmt = $conn->prepare("DELETE FROM cursos WHERE id = ?");
-                $stmt->bind_param("i", $id);
-                $stmt->execute();
-                $stmt->close();
-                
-                // Redirigir con mensaje de éxito para evitar duplicación
-                $_SESSION['curso_success'] = 'Curso eliminado correctamente.';
-                header('Location: index.php?page=cursos');
-                exit;
-            }
+        } catch (Exception $e) {
+            $this->handleAdminError($e, 'Error al cargar los cursos');
         }
-        
-        // Obtener lista de cursos según el rol
-        $cursos = [];
-        if ($_SESSION['user_rol'] === 'profesor') {
-            // Los profesores solo ven sus propios cursos
-            $query = "
-                SELECT c.*, p.nombre as programa_nombre, u.nombre as profesor_nombre
-                FROM cursos c 
-                LEFT JOIN programas p ON c.programa_id = p.id
-                LEFT JOIN usuarios u ON c.profesor_id = u.id
-                WHERE c.profesor_id = ?
-                ORDER BY c.created_at DESC
-            ";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $_SESSION['user_id']);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            while ($row = $result->fetch_assoc()) {
-                $cursos[] = $row;
-            }
-            $stmt->close();
-        } else {
-            // Admins y super_admins ven todos los cursos
-            $query = "
-                SELECT c.*, p.nombre as programa_nombre, u.nombre as profesor_nombre
-                FROM cursos c 
-                LEFT JOIN programas p ON c.programa_id = p.id
-                LEFT JOIN usuarios u ON c.profesor_id = u.id
-                ORDER BY c.created_at DESC
-            ";
-            $result = $conn->query($query);
-            if ($result) {
-                while ($row = $result->fetch_assoc()) {
-                    $cursos[] = $row;
-                }
-            }
-        }
-        
-        // Obtener lista de programas activos
-        $programas = [];
-        $query = "SELECT * FROM programas WHERE activo = 1 ORDER BY nombre ASC";
-        $result = $conn->query($query);
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $programas[] = $row;
-            }
-        }
-        
-        // Obtener lista de profesores (solo para admins)
-        $profesores = [];
-        if (in_array($_SESSION['user_rol'], ['super_admin', 'admin'])) {
-            $query = "SELECT id, nombre, username FROM usuarios WHERE rol = 'profesor' AND activo = 1 ORDER BY nombre ASC";
-            $result = $conn->query($query);
-            if ($result) {
-                while ($row = $result->fetch_assoc()) {
-                    $profesores[] = $row;
-                }
-            }
-        }
-        
-        // Mostrar vista de cursos
-        include '../app/views/admin/cursos.php';
     }
     
-    public function sesiones() {
+    /**
+     * Exportar datos
+     */
+    public function exportar() {
         // Verificar permisos
-        if (!in_array($_SESSION['user_rol'], ['super_admin', 'admin', 'profesor'])) {
-            header('Location: index.php?page=dashboard');
-            exit;
+        if (!$this->hasPermission('reportes_export')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para exportar'], 403);
+            return;
         }
         
-        $conn = $this->db->getConnection();
-        $error = '';
-        $success = '';
+        $tipo = $_GET['tipo'] ?? '';
+        $formato = $_GET['formato'] ?? 'excel';
         
-        // Procesar formulario de creación/edición de sesión
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
-            $curso_id = $_POST['curso_id'] ?? 0;
-            $fecha = $_POST['fecha'] ?? '';
-            $hora_inicio = $_POST['hora_inicio'] ?? '';
-            $hora_fin = $_POST['hora_fin'] ?? null;
-            $estado = $_POST['estado'] ?? 'activa';
-            
-            if (empty($curso_id) || empty($fecha) || empty($hora_inicio)) {
-                $error = 'Por favor, complete los campos obligatorios.';
-            } else {
-                if ($id > 0) {
-                    // Actualizar sesión
-                    $stmt = $conn->prepare("
-                        UPDATE sesiones 
-                        SET curso_id = ?, fecha = ?, hora_inicio = ?, hora_fin = ?, estado = ?
-                        WHERE id = ?
-                    ");
-                    $stmt->bind_param("issssi", $curso_id, $fecha, $hora_inicio, $hora_fin, $estado, $id);
-                    $stmt->execute();
-                    $success = 'Sesión actualizada correctamente.';
-                } else {
-                    // Crear nueva sesión
-                    $stmt = $conn->prepare("
-                        INSERT INTO sesiones (curso_id, fecha, hora_inicio, estado)
-                        VALUES (?, ?, ?, ?)
-                    ");
-                    $stmt->bind_param("isss", $curso_id, $fecha, $hora_inicio, $estado);
-                    $stmt->execute();
-                    $success = 'Sesión creada correctamente.';
-                }
-                $stmt->close();
+        try {
+            switch ($tipo) {
+                case 'asistencias':
+                    $this->exportarAsistencias($formato);
+                    break;
+                case 'estudiantes':
+                    $this->exportarEstudiantes($formato);
+                    break;
+                case 'cursos':
+                    $this->exportarCursos($formato);
+                    break;
+                default:
+                    throw new Exception('Tipo de exportación no válido');
             }
+        } catch (Exception $e) {
+            $this->handleAdminError($e, 'Error al exportar datos');
         }
-        
-        // Cambiar estado de sesión
-        if (isset($_GET['activate']) && intval($_GET['activate']) > 0) {
-            $id = intval($_GET['activate']);
-            $stmt = $conn->prepare("UPDATE sesiones SET estado = 'activa' WHERE id = ?");
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $success = 'Sesión activada correctamente.';
-            $stmt->close();
-        }
-        
-        if (isset($_GET['deactivate']) && intval($_GET['deactivate']) > 0) {
-            $id = intval($_GET['deactivate']);
-            $allowFinalize = false;
-            if (in_array($_SESSION['user_rol'], ['super_admin', 'admin'])) {
-                $allowFinalize = true;
-            } elseif ($_SESSION['user_rol'] === 'profesor') {
-                // Verificar si la sesión pertenece a un curso del profesor
-                $stmt = $conn->prepare("SELECT c.profesor_id FROM sesiones s JOIN cursos c ON s.curso_id = c.id WHERE s.id = ?");
-                $stmt->bind_param("i", $id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                if ($result && $row = $result->fetch_assoc()) {
-                    if ($row['profesor_id'] == $_SESSION['user_id']) {
-                        $allowFinalize = true;
-                    }
-                }
-                $stmt->close();
-            }
-            if ($allowFinalize) {
-                $stmt = $conn->prepare("UPDATE sesiones SET estado = 'finalizada', hora_fin = NOW() WHERE id = ?");
-                $stmt->bind_param("i", $id);
-                $stmt->execute();
-                $success = 'Sesión finalizada correctamente.';
-                $stmt->close();
-            } else {
-                $error = 'No tienes permisos para finalizar esta sesión.';
-            }
-        }
-        
-        // Obtener lista de cursos para el formulario
-        $cursos = [];
-        $query = "SELECT id, codigo, nombre FROM cursos ORDER BY nombre";
-        
-        $result = $conn->query($query);
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $cursos[] = $row;
-            }
-        }
-        
-        // Obtener lista de sesiones
-        $sesiones = [];
-        $query = "
-            SELECT s.*, c.nombre as curso_nombre, c.programa, c.semestre, c.grupo
-            FROM sesiones s
-            JOIN cursos c ON s.curso_id = c.id
-            ORDER BY s.fecha DESC, s.hora_inicio DESC
-        ";
-        
-        $result = $conn->query($query);
-        if ($result) {
-            while ($row = $result->fetch_assoc()) {
-                $sesiones[] = $row;
-            }
-        }
-        
-        // Mostrar vista de sesiones
-        include '../app/views/admin/sesiones.php';
     }
     
-    public function exportarAsistencia() {
-        // Verificar si el usuario es administrador
-        if (!in_array($_SESSION['user_rol'], ['super_admin', 'admin', 'profesor'])) {
-            header('Location: index.php?page=dashboard');
-            exit;
+    /**
+     * Obtener estadísticas del dashboard
+     */
+    private function getDashboardStats() {
+        $stats = [];
+        
+        if ($this->currentUser['rol'] === 'profesor') {
+            // Estadísticas específicas del profesor
+            $stats['total_cursos'] = $this->cursoModel->countByProfesor($this->currentUser['id']);
+            $stats['total_sesiones'] = $this->sesionModel->countByProfesor($this->currentUser['id']);
+            $stats['total_estudiantes'] = $this->estudianteModel->countByProfesor($this->currentUser['id']);
+            $stats['asistencia_promedio'] = $this->asistenciaModel->getPromedioByProfesor($this->currentUser['id']);
+        } else {
+            // Estadísticas generales para admin y super_admin
+            $stats['total_cursos'] = $this->cursoModel->count(['activo' => 1]);
+            $stats['total_sesiones'] = $this->sesionModel->count();
+            $stats['total_estudiantes'] = $this->estudianteModel->count(['activo' => 1]);
+            $stats['total_usuarios'] = $this->usuarioModel->count(['activo' => 1]);
+            $stats['asistencia_promedio'] = $this->asistenciaModel->getPromedioGeneral();
         }
         
-        $conn = $this->db->getConnection();
-        $error = '';
+        return $stats;
+    }
+    
+    /**
+     * Obtener sesiones activas
+     */
+    private function getSesionesActivas() {
+        if ($this->currentUser['rol'] === 'profesor') {
+            return $this->sesionModel->getActivasByProfesor($this->currentUser['id']);
+        } else {
+            return $this->sesionModel->getActivas();
+        }
+    }
+    
+    /**
+     * Obtener actividad reciente
+     */
+    private function getRecentActivity() {
+        // Implementar según necesidades específicas
+        return [];
+    }
+    
+    /**
+     * Procesar formulario de curso
+     */
+    private function processCursoForm() {
+        // Verificar token CSRF
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            return ['error' => 'Token de seguridad inválido'];
+        }
         
-        // Verificar si hay un ID de sesión en la URL
-        $sesion_id = isset($_GET['sesion_id']) ? intval($_GET['sesion_id']) : 0;
+        $id = isset($_POST['id']) ? intval($_POST['id']) : 0;
+        $action = $id > 0 ? 'update' : 'create';
         
-        if ($sesion_id > 0) {
-            // Obtener información de la sesión
-            $stmt = $conn->prepare("
-                SELECT s.*, c.nombre as curso_nombre, c.codigo, c.programa, c.area, c.semestre, c.grupo, c.aula, c.sede
-                FROM sesiones s
-                JOIN cursos c ON s.curso_id = c.id
-                WHERE s.id = ?
-            ");
-            $stmt->bind_param("i", $sesion_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($result->num_rows === 1) {
-                $sesion = $result->fetch_assoc();
-                
-                // Obtener lista de asistencias
-                $asistencias = [];
-                $stmt = $conn->prepare("
-                    SELECT a.*, e.nombre, e.documento, e.codigo, e.telefono, e.direccion, e.correo
-                    FROM asistencias a
-                    JOIN estudiantes e ON a.estudiante_id = e.id
-                    WHERE a.sesion_id = ?
-                    ORDER BY a.hora_registro
-                ");
-                $stmt->bind_param("i", $sesion_id);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                
-                while ($row = $result->fetch_assoc()) {
-                    $asistencias[] = $row;
+        // Verificar permisos específicos
+        if (!$this->hasPermission("cursos_{$action}")) {
+            return ['error' => 'No tienes permisos para esta acción'];
+        }
+        
+        // Validar y sanitizar datos
+        $data = [
+            'codigo' => $this->sanitizeInput($_POST['codigo'] ?? ''),
+            'nombre' => $this->sanitizeInput($_POST['nombre'] ?? ''),
+            'programa_id' => intval($_POST['programa_id'] ?? 0),
+            'area' => $this->sanitizeInput($_POST['area'] ?? ''),
+            'semestre' => intval($_POST['semestre'] ?? 0),
+            'grupo' => intval($_POST['grupo'] ?? 0),
+            'aula' => $this->sanitizeInput($_POST['aula'] ?? ''),
+            'sede' => $this->sanitizeInput($_POST['sede'] ?? '')
+        ];
+        
+        // Asignar profesor según el rol
+        if ($this->currentUser['rol'] === 'profesor') {
+            $data['profesor_id'] = $this->currentUser['id'];
+        } elseif (isset($_POST['profesor_id']) && intval($_POST['profesor_id']) > 0) {
+            $data['profesor_id'] = intval($_POST['profesor_id']);
+        }
+        
+        try {
+            if ($id > 0) {
+                // Verificar permisos de edición específicos
+                if ($this->currentUser['rol'] === 'profesor') {
+                    $curso = $this->cursoModel->find($id);
+                    if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                        return ['error' => 'No tienes permisos para editar este curso'];
+                    }
                 }
                 
-                // Generar PDF o mostrar vista para exportar
-                if (isset($_GET['format']) && $_GET['format'] === 'pdf') {
-                    // Validar token CSRF
-                    $csrf_token = $_GET['csrf_token'] ?? '';
-                    if (!isset($_SESSION['csrf_token']) || $csrf_token !== $_SESSION['csrf_token']) {
-                        die('Token CSRF inválido.');
-                    }
-                    
-                    // Verificar permisos de administrador
-                    if (!isset($_SESSION['user_rol']) || !in_array($_SESSION['user_rol'], ['admin', 'super_admin'])) {
-                        die('No tienes permisos para exportar.');
-                    }
-                    
-                    // Aquí implementarías la generación del PDF
-                    // Por ahora, simplemente redirigimos a la vista HTML
-                    header('Location: index.php?page=exportar&sesion_id=' . $sesion_id);
-                    exit;
+                $result = $this->cursoModel->update($id, $data);
+                
+                if (isset($result['errors'])) {
+                    return ['error' => implode(', ', $result['errors'])];
                 }
                 
-                // Mostrar vista de exportación
-                include '../app/views/admin/exportar.php';
+                $this->logActivity('curso_updated', $id, null, $data);
+                return ['success' => 'Curso actualizado correctamente'];
+                
             } else {
-                $error = 'La sesión no existe.';
-                include '../app/views/admin/error.php';
+                $result = $this->cursoModel->create($data);
+                
+                if (isset($result['errors'])) {
+                    return ['error' => implode(', ', $result['errors'])];
+                }
+                
+                $this->logActivity('curso_created', $result, null, $data);
+                return ['success' => 'Curso creado correctamente'];
             }
             
-            $stmt->close();
+        } catch (Exception $e) {
+            return ['error' => 'Error al procesar el curso: ' . $e->getMessage()];
+        }
+    }
+    
+    /**
+     * Obtener cursos según el rol del usuario
+     */
+    private function getCursosByRole() {
+        if ($this->currentUser['rol'] === 'profesor') {
+            return $this->cursoModel->getByProfesor($this->currentUser['id']);
         } else {
-            $error = 'Sesión no válida.';
-            include '../app/views/admin/error.php';
+            return $this->cursoModel->getAllWithRelations();
+        }
+    }
+    
+    /**
+     * Exportar asistencias
+     */
+    private function exportarAsistencias($formato) {
+        $cursoId = $_GET['curso_id'] ?? null;
+        $fechaInicio = $_GET['fecha_inicio'] ?? null;
+        $fechaFin = $_GET['fecha_fin'] ?? null;
+        
+        // Verificar permisos específicos del curso si es profesor
+        if ($this->currentUser['rol'] === 'profesor' && $cursoId) {
+            $curso = $this->cursoModel->find($cursoId);
+            if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                throw new Exception('No tienes permisos para exportar este curso');
+            }
+        }
+        
+        $datos = $this->asistenciaModel->exportarAsistencias($cursoId, $fechaInicio, $fechaFin);
+        
+        if ($formato === 'excel') {
+            $this->exportToExcel($datos, 'asistencias');
+        } else {
+            $this->exportToPDF($datos, 'asistencias');
+        }
+    }
+    
+    /**
+     * Exportar estudiantes
+     */
+    private function exportarEstudiantes($formato) {
+        $cursoId = $_GET['curso_id'] ?? null;
+        
+        // Verificar permisos específicos del curso si es profesor
+        if ($this->currentUser['rol'] === 'profesor' && $cursoId) {
+            $curso = $this->cursoModel->find($cursoId);
+            if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                throw new Exception('No tienes permisos para exportar este curso');
+            }
+        }
+        
+        $datos = $this->estudianteModel->exportar($cursoId);
+        
+        if ($formato === 'excel') {
+            $this->exportToExcel($datos, 'estudiantes');
+        } else {
+            $this->exportToPDF($datos, 'estudiantes');
+        }
+    }
+    
+    /**
+     * Exportar cursos
+     */
+    private function exportarCursos($formato) {
+        if ($this->currentUser['rol'] === 'profesor') {
+            $datos = $this->cursoModel->exportarByProfesor($this->currentUser['id']);
+        } else {
+            $datos = $this->cursoModel->exportar();
+        }
+        
+        if ($formato === 'excel') {
+            $this->exportToExcel($datos, 'cursos');
+        } else {
+            $this->exportToPDF($datos, 'cursos');
+        }
+    }
+    
+    /**
+     * Exportar a Excel
+     */
+    private function exportToExcel($datos, $tipo) {
+        require_once __DIR__ . '/../utils/ExportHelper.php';
+        
+        switch ($tipo) {
+            case 'asistencias':
+                $prepared = ExportHelper::prepareAsistenciaData($datos);
+                ExportHelper::exportToExcel(
+                    $prepared['datos'], 
+                    'asistencia', 
+                    'Reporte de Asistencia - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+            case 'estudiantes':
+                $prepared = ExportHelper::prepareEstudiantesData($datos);
+                ExportHelper::exportToExcel(
+                    $prepared['datos'], 
+                    'estudiantes', 
+                    'Reporte de Estudiantes - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+            case 'cursos':
+                $prepared = ExportHelper::prepareCursosData($datos);
+                ExportHelper::exportToExcel(
+                    $prepared['datos'], 
+                    'cursos', 
+                    'Reporte de Cursos - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+        }
+    }
+    
+    /**
+     * Exportar a PDF
+     */
+    private function exportToPDF($datos, $tipo) {
+        require_once __DIR__ . '/../utils/ExportHelper.php';
+        
+        switch ($tipo) {
+            case 'asistencias':
+                $prepared = ExportHelper::prepareAsistenciaData($datos);
+                ExportHelper::exportToPDF(
+                    $prepared['datos'], 
+                    'asistencia', 
+                    'Reporte de Asistencia - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+            case 'estudiantes':
+                $prepared = ExportHelper::prepareEstudiantesData($datos);
+                ExportHelper::exportToPDF(
+                    $prepared['datos'], 
+                    'estudiantes', 
+                    'Reporte de Estudiantes - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+            case 'cursos':
+                $prepared = ExportHelper::prepareCursosData($datos);
+                ExportHelper::exportToPDF(
+                    $prepared['datos'], 
+                    'cursos', 
+                    'Reporte de Cursos - ' . date('d/m/Y'), 
+                    $prepared['encabezados']
+                );
+                break;
+        }
+    }
+    
+    /**
+     * Exportar a CSV (temporal)
+     */
+    private function exportToCSV($datos, $tipo) {
+        if (empty($datos)) {
+            throw new Exception('No hay datos para exportar');
+        }
+        
+        $output = fopen('php://output', 'w');
+        
+        // Escribir encabezados
+        fputcsv($output, array_keys($datos[0]));
+        
+        // Escribir datos
+        foreach ($datos as $row) {
+            fputcsv($output, $row);
+        }
+        
+        fclose($output);
+    }
+    
+    /**
+     * Verificar si el usuario tiene un permiso específico
+     */
+    protected function hasPermission($permission) {
+        return $this->middlewareManager->checkPermission($permission);
+    }
+    
+    /**
+     * Redirigir cuando no se tienen permisos
+     */
+    private function redirectUnauthorized() {
+        $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
+        
+        // Redirigir al login con mensaje de error de permisos
+        $this->redirect('index.php?page=login&error=permissions');
+    }
+    
+    /**
+     * Manejar errores específicos del AdminController
+     */
+    protected function handleAdminError($exception, $userMessage = 'Ha ocurrido un error') {
+        // Log del error
+        error_log($exception->getMessage());
+        
+        if ($this->isAjaxRequest()) {
+            $this->jsonResponse(['error' => $userMessage], 500);
+        } else {
+            $this->setFlashMessage($userMessage, 'error');
+            $this->redirect('index.php?page=dashboard');
         }
     }
 }
