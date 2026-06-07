@@ -8,6 +8,8 @@ require_once __DIR__ . '/ProgramasController.php';
 require_once __DIR__ . '/SesionesController.php';
 require_once __DIR__ . '/EmailController.php';
 require_once __DIR__ . '/ExportController.php';
+require_once __DIR__ . '/ActivacionController.php';
+require_once __DIR__ . '/ProfileController.php';
 require_once __DIR__ . '/../core/Router.php';
 
 /**
@@ -27,6 +29,12 @@ class AppController extends BaseController {
      */
     public function start() {
         try {
+            // Intentar autenticación automática via cookie "recordarme"
+            // Solo si el usuario no tiene sesión activa
+            if (!isset($_SESSION['user_id'])) {
+                AuthController::checkRememberToken();
+            }
+
             // Delegar al router para manejar la solicitud
             $this->router->dispatch();
             

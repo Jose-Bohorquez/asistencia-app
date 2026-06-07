@@ -1,0 +1,6 @@
+# Bloquear acceso directo a todos los archivos PHP del directorio app/
+# Solo el entrypoint public/index.php puede incluirlos mediante require/include
+<FilesMatch "\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>

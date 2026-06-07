@@ -116,17 +116,18 @@ abstract class Middleware {
     }
     
     /**
-     * Validar token CSRF
+     * Validar token CSRF — solo acepta el token desde POST o cabecera HTTP
      */
     protected function validateCSRF($token = null) {
         if (!$token) {
-            $token = $_POST['csrf_token'] ?? $_GET['csrf_token'] ?? null;
+            // Solo leer de POST o cabecera X-CSRF-Token; NUNCA desde GET
+            $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
         }
-        
+
         if (!$token || !isset($_SESSION['csrf_token'])) {
             return false;
         }
-        
+
         return hash_equals($_SESSION['csrf_token'], $token);
     }
     

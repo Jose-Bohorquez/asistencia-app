@@ -105,13 +105,13 @@
                             <div class="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center mr-2">
                                 <i class="fas fa-user text-sm"></i>
                             </div>
-                            <span class="hidden lg:inline"><?= $_SESSION['nombre'] ?></span>
+                            <span class="hidden lg:inline"><?= htmlspecialchars($_SESSION['nombre'] ?? '', ENT_QUOTES, 'UTF-8') ?></span>
                             <i class="fas fa-chevron-down ml-2 text-xs transition-transform duration-200" id="userMenuIcon"></i>
                         </button>
                         <div id="userDropdown" class="navbar-dropdown absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl py-2 z-50 border border-gray-200">
                             <div class="px-4 py-3 border-b border-gray-100">
-                                <p class="text-sm text-gray-900 font-medium"><?= $_SESSION['nombre'] ?></p>
-                                <p class="text-xs text-gray-500 capitalize"><?= $_SESSION['rol'] ?></p>
+                                <p class="text-sm text-gray-900 font-medium"><?= htmlspecialchars($_SESSION['nombre'] ?? '', ENT_QUOTES, 'UTF-8') ?></p>
+                                <p class="text-xs text-gray-500 capitalize"><?= htmlspecialchars($_SESSION['rol'] ?? '', ENT_QUOTES, 'UTF-8') ?></p>
                             </div>
                             <button onclick="confirmLogout()" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors duration-200 flex items-center">
                                 <i class="fas fa-sign-out-alt mr-3 text-red-500"></i>Cerrar sesión
@@ -152,8 +152,8 @@
                     <?php endif; ?>
                     <div class="border-t border-blue-700 pt-3 mt-3">
                         <div class="px-3 py-2">
-                            <p class="text-sm font-medium"><?= $_SESSION['nombre'] ?></p>
-                            <p class="text-xs text-blue-300 capitalize"><?= $_SESSION['rol'] ?></p>
+                            <p class="text-sm font-medium"><?= htmlspecialchars($_SESSION['nombre'] ?? '', ENT_QUOTES, 'UTF-8') ?></p>
+                            <p class="text-xs text-blue-300 capitalize"><?= htmlspecialchars($_SESSION['rol'] ?? '', ENT_QUOTES, 'UTF-8') ?></p>
                         </div>
                         <button onclick="confirmLogout()" class="w-full text-left px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-900 hover:text-red-100 transition-colors duration-200 flex items-center">
                             <i class="fas fa-sign-out-alt mr-3"></i>Cerrar sesión

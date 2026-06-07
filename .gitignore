@@ -1,44 +1,44 @@
-# Archivos de debug y pruebas
-debug_login.php
-test_password.php
+# ─── Credenciales y entorno — NUNCA versionar ────────────────────────────────
+.env
+.env.local
+.env.production
+config/env.local.php
 
-# Logs
+# ─── Archivos de debug y pruebas manuales ────────────────────────────────────
+debug_*.php
+test_*.php
+
+# ─── Storage: archivos subidos por usuarios ──────────────────────────────────
+# Mantener la estructura de carpetas con .gitkeep, pero no los archivos reales
+storage/perfiles/*
+!storage/perfiles/.gitkeep
+storage/temp/
+uploads/temp/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
 *.log
 logs/
 
-# Archivos temporales
+# ─── Dependencias ────────────────────────────────────────────────────────────
+vendor/
+node_modules/
+
+# ─── Cache ───────────────────────────────────────────────────────────────────
+cache/
+*.cache
 *.tmp
 *.temp
 
-# Configuración local
-config/local.php
-
-# Archivos de backup
+# ─── Backup ──────────────────────────────────────────────────────────────────
 *.bak
 *.backup
 
-# Archivos del sistema
+# ─── Sistema operativo ───────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 
-# IDE
+# ─── IDEs ────────────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Dependencias (si se usan en el futuro)
-vendor/
-node_modules/
-
-# Archivos de entorno
-.env
-.env.local
-.env.production
-
-# Uploads temporales
-uploads/temp/
-
-# Cache
-cache/
-*.cache

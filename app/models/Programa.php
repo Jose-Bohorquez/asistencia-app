@@ -7,7 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class Programa extends BaseModel {
     protected $table = 'programas';
-    protected $fillable = ['nombre', 'codigo', 'tipo', 'descripcion', 'activo'];
+    protected $fillable = ['nombre', 'codigo', 'activo'];
     
     // Tipos de programa
     const TIPO_PREGRADO = 'pregrado';
@@ -19,29 +19,19 @@ class Programa extends BaseModel {
      * Crear programa con validaciones
      */
     public function create($data) {
-        // Validar datos
         $errors = $this->validate($data, [
             'nombre' => 'required|max:100',
             'codigo' => 'required|max:20',
-            'tipo' => 'required'
         ]);
-        
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
-        // Verificar que el código no exista
+
         if ($this->codigoExists($data['codigo'])) {
             return ['errors' => ['codigo' => 'El código del programa ya existe']];
         }
-        
-        // Validar tipo de programa
-        $tiposValidos = [self::TIPO_PREGRADO, self::TIPO_POSGRADO, self::TIPO_TECNICO, self::TIPO_TECNOLOGICO];
-        if (!in_array($data['tipo'], $tiposValidos)) {
-            return ['errors' => ['tipo' => 'Tipo de programa no válido']];
-        }
-        
-        // Establecer activo por defecto
+
         if (!isset($data['activo'])) {
             $data['activo'] = 1;
         }
@@ -60,29 +50,25 @@ class Programa extends BaseModel {
      */
     public function update($id, $data) {
         $oldData = $this->find($id);
-        
-        // Validar datos
-        $errors = $this->validate($data, [
+
+        // Solo valida los campos que vienen en $data (permite actualizaciones parciales
+        // como ['activo'=>0] sin exigir nombre y codigo).
+        $allRules = [
             'nombre' => 'required|max:100',
             'codigo' => 'required|max:20',
-            'tipo' => 'required'
-        ]);
-        
+        ];
+        $rules  = array_intersect_key($allRules, $data);
+        $errors = $this->validate($data, $rules);
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
-        // Verificar código único
-        if ($this->codigoExists($data['codigo'], $id)) {
+
+        // Solo verifica unicidad de código cuando 'codigo' forma parte de la actualización
+        if (isset($data['codigo']) && $this->codigoExists($data['codigo'], $id)) {
             return ['errors' => ['codigo' => 'El código del programa ya existe']];
         }
-        
-        // Validar tipo de programa
-        $tiposValidos = [self::TIPO_PREGRADO, self::TIPO_POSGRADO, self::TIPO_TECNICO, self::TIPO_TECNOLOGICO];
-        if (!in_array($data['tipo'], $tiposValidos)) {
-            return ['errors' => ['tipo' => 'Tipo de programa no válido']];
-        }
-        
+
         $success = parent::update($id, $data);
         
         if ($success) {
@@ -103,8 +89,9 @@ class Programa extends BaseModel {
             return ['errors' => ['cursos' => 'No se puede eliminar el programa porque tiene cursos activos']];
         }
         
-        // En lugar de eliminar, desactivar el programa
-        $success = $this->update($id, ['activo' => 0]);
+        // Soft-delete: desactivar. Usa parent::update() para evitar validación
+        // de campos requeridos (nombre, codigo) que no forman parte de este cambio parcial.
+        $success = parent::update($id, ['activo' => 0]);
         
         if ($success) {
             $this->logActivity('delete', $id, $oldData);
@@ -113,6 +100,11 @@ class Programa extends BaseModel {
         return $success;
     }
     
+    /** Alias de all() para compatibilidad con código que llama getAll() */
+    public function getAll($conditions = [], $orderBy = 'nombre') {
+        return $this->all($conditions, $orderBy);
+    }
+
     /**
      * Obtener programas activos
      */
@@ -307,16 +299,8 @@ class Programa extends BaseModel {
         $stats['total_activos'] = $result->fetch_assoc()['total'];
         $stmt->close();
         
-        // Programas por tipo
-        $stmt = $conn->prepare("SELECT tipo, COUNT(*) as total FROM programas WHERE activo = 1 GROUP BY tipo");
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
         $stats['por_tipo'] = [];
-        while ($row = $result->fetch_assoc()) {
-            $stats['por_tipo'][$row['tipo']] = $row['total'];
-        }
-        $stmt->close();
+        // (columna 'tipo' no existe en esta versión del esquema)
         
         // Programa con más cursos
         $stmt = $conn->prepare("
@@ -451,11 +435,9 @@ class Programa extends BaseModel {
         $conn = $this->getConnection();
         
         $stmt = $conn->prepare("
-            SELECT 
+            SELECT
                 p.codigo,
                 p.nombre,
-                p.tipo,
-                p.descripcion,
                 COUNT(DISTINCT c.id) as total_cursos,
                 COUNT(DISTINCT ce.estudiante_id) as total_estudiantes,
                 COUNT(DISTINCT c.profesor_id) as total_profesores,
@@ -464,23 +446,104 @@ class Programa extends BaseModel {
             LEFT JOIN cursos c ON p.id = c.programa_id AND c.activo = 1
             LEFT JOIN cursos_estudiantes ce ON c.id = ce.curso_id
             LEFT JOIN estudiantes e ON ce.estudiante_id = e.id AND e.activo = 1
-            GROUP BY p.id, p.codigo, p.nombre, p.tipo, p.descripcion, p.activo
+            GROUP BY p.id, p.codigo, p.nombre, p.activo
             ORDER BY p.nombre
         ");
-        
+
         $stmt->execute();
         $result = $stmt->get_result();
-        
-        $datos = [];
-        while ($row = $result->fetch_assoc()) {
-            $row['tipo'] = self::getNombreTipo($row['tipo']);
-            $datos[] = $row;
-        }
+        $datos  = [];
+        while ($row = $result->fetch_assoc()) $datos[] = $row;
         
         $stmt->close();
         return $datos;
     }
     
+    /**
+     * Programas con filtros (búsqueda, estado, orden, paginación)
+     */
+    public function getWithFilters($filtros) {
+        $conn   = $this->getConnection();
+        $sql    = "SELECT p.*, COUNT(c.id) as total_cursos
+                   FROM programas p
+                   LEFT JOIN cursos c ON p.id = c.programa_id AND c.activo = 1
+                   WHERE 1=1";
+        $params = [];
+        $types  = '';
+
+        if (!empty($filtros['buscar'])) {
+            $sql .= ' AND (p.nombre LIKE ? OR p.codigo LIKE ? OR p.descripcion LIKE ?)';
+            $term = '%' . $filtros['buscar'] . '%';
+            $params[] = $term; $params[] = $term; $params[] = $term;
+            $types   .= 'sss';
+        }
+        if ($filtros['activo'] !== '') {
+            $sql .= ' AND p.activo = ?';
+            $params[] = (int)$filtros['activo'];
+            $types   .= 'i';
+        }
+
+        $sql .= ' GROUP BY p.id';
+
+        $allowedOrden = ['nombre', 'codigo', 'created_at'];
+        $orden = in_array($filtros['orden'] ?? 'nombre', $allowedOrden) ? $filtros['orden'] : 'nombre';
+        $dir   = ($filtros['direccion'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
+        $sql  .= " ORDER BY p.{$orden} {$dir}";
+
+        $stmt = $conn->prepare($sql);
+        if (!empty($params)) $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $data   = [];
+        while ($row = $result->fetch_assoc()) $data[] = $row;
+        $stmt->close();
+        return $data;
+    }
+
+    /**
+     * Cuenta programas activos que tienen al menos un curso activo
+     */
+    public function countConCursos() {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("
+            SELECT COUNT(DISTINCT p.id) as total
+            FROM programas p
+            INNER JOIN cursos c ON p.id = c.programa_id AND c.activo = 1
+            WHERE p.activo = 1
+        ");
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
+    }
+
+    /**
+     * Alias de codigoExists() para compatibilidad con el controlador
+     */
+    public function existeCodigo($codigo, $excludeId = null) {
+        return $this->codigoExists($codigo, $excludeId);
+    }
+
+    /**
+     * Exportar programas — alias de exportarProgramas()
+     */
+    public function exportar($filtros = []) {
+        return $this->exportarProgramas();
+    }
+
+    /**
+     * Cuenta cursos activos de un programa (útil para validación antes de borrar)
+     */
+    public function countByPrograma($programaId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos WHERE programa_id = ? AND activo = 1");
+        $stmt->bind_param('i', $programaId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
+    }
+
     /**
      * Duplicar programa
      */

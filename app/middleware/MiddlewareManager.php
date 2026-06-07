@@ -378,41 +378,37 @@ class MiddlewareManager {
     }
     
     /**
-     * Verificar si una acción específica está permitida
+     * Verificar si una acción específica está permitida (delega a RoleMiddleware)
      */
     public static function isActionAllowed($page, $action, $db = null) {
         if (!isset($_SESSION['user_id'])) {
             return false;
         }
-        
-        $userRole = $_SESSION['user_rol'];
-        
-        // Super admin puede hacer todo
-        if ($userRole === 'super_admin') {
+        if (($_SESSION['user_rol'] ?? '') === 'super_admin') {
             return true;
         }
-        
-        // Admin no puede eliminar
-        if ($userRole === 'admin' && in_array($action, ['delete', 'destroy', 'eliminar'])) {
-            return false;
-        }
-        
-        // Profesor solo puede manejar sus recursos
-        if ($userRole === 'profesor') {
-            $allowedPages = ['cursos', 'estudiantes', 'sesiones', 'asistencia', 'reportes'];
-            if (!in_array($page, $allowedPages)) {
-                return false;
-            }
-            
-            // No puede eliminar
-            if (in_array($action, ['delete', 'destroy', 'eliminar'])) {
-                return false;
-            }
-        }
-        
-        return true;
+
+        $resourceMap = [
+            'usuarios'  => 'usuarios',
+            'programas' => 'programas',
+            'cursos'    => 'cursos',
+            'sesiones'  => 'sesiones',
+            'asistencia'=> 'asistencias',
+            'reportes'  => 'reportes',
+            'exportar'  => 'reportes',
+        ];
+        $actionMap = [
+            'delete' => 'delete', 'destroy' => 'delete', 'eliminar' => 'delete',
+            'create' => 'create', 'nuevo'   => 'create', 'store'    => 'create',
+            'edit'   => 'update', 'editar'  => 'update', 'update'   => 'update',
+        ];
+        $resource = $resourceMap[$page] ?? 'dashboard';
+        $verb     = $actionMap[$action] ?? 'read';
+
+        $roleMiddleware = new RoleMiddleware($db);
+        return $roleMiddleware->hasPermissionForAction($resource . '_' . $verb);
     }
-    
+
     /**
      * Obtener información de permisos para el frontend
      */
@@ -420,17 +416,18 @@ class MiddlewareManager {
         if (!isset($_SESSION['user_id'])) {
             return [];
         }
-        
+
         $roleMiddleware = new RoleMiddleware($db);
-        
+        $userRole = $_SESSION['user_rol'];
+
         return [
-            'user_role' => $_SESSION['user_rol'],
-            'permissions' => $roleMiddleware->getUserPermissions(),
-            'accessible_pages' => self::getAccessiblePages($db),
-            'can_delete' => $_SESSION['user_rol'] === 'super_admin',
-            'can_create_users' => in_array($_SESSION['user_rol'], ['super_admin', 'admin']),
-            'can_manage_programs' => in_array($_SESSION['user_rol'], ['super_admin', 'admin']),
-            'is_professor' => $_SESSION['user_rol'] === 'profesor'
+            'user_role'          => $userRole,
+            'permissions'        => $roleMiddleware->getUserPermissions(),
+            'accessible_pages'   => self::getAccessiblePages($db),
+            'can_delete'         => in_array($userRole, ['super_admin', 'admin']),
+            'can_create_users'   => $userRole === 'super_admin',
+            'can_manage_programs'=> in_array($userRole, ['super_admin', 'admin']),
+            'is_professor'       => $userRole === 'profesor',
         ];
     }
 }

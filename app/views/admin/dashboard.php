@@ -1,269 +1,235 @@
-<?php 
-// Incluir componentes necesarios
-require_once '../app/views/components/card.php';
+<?php
 require_once '../app/views/components/button.php';
-require_once '../app/views/components/table.php';
-require_once '../app/views/components/alert.php';
 
-// Configurar el layout base
-$pageTitle = 'Dashboard - ' . APP_NAME;
+$pageTitle       = 'Dashboard - ' . APP_NAME;
 $pageDescription = 'Panel de administración del sistema de asistencia';
-$customCSS = [];
-$customJS = [];
 
 ob_start();
 ?>
 
-<!-- Header del Dashboard -->
-<?= renderCard([
-    'title' => 'Dashboard',
-    'content' => '
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div class="mb-4 sm:mb-0">
-                <p class="text-blue-100">Bienvenido, ' . htmlspecialchars($_SESSION['nombre']) . '</p>
-            </div>
-            <div class="flex flex-col sm:flex-row gap-3">
-                ' . renderButton([
-                    'text' => 'Gestionar Cursos',
-                    'type' => 'secondary',
-                    'icon' => 'fas fa-book',
-                    'href' => 'index.php?page=cursos',
-                    'extraClasses' => 'bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30'
-                ]) . '
-                ' . renderButton([
-                    'text' => 'Nueva Sesión',
-                    'type' => 'secondary', 
-                    'icon' => 'fas fa-plus',
-                    'href' => 'index.php?page=sesiones',
-                    'extraClasses' => 'bg-white bg-opacity-20 hover:bg-opacity-30 text-white border-white border-opacity-30'
-                ]) . '
-            </div>
-        </div>
-    ',
-    'color' => 'blue',
-    'gradient' => true,
-    'extraClasses' => 'mb-4 sm:mb-8 text-white'
-]) ?>
-
-<!-- Tarjetas de Estadísticas -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-4 sm:mb-8">
-    <?= renderStatCard([
-        'title' => 'Total Cursos',
-        'value' => $totalCursos,
-        'icon' => 'fas fa-book',
-        'color' => 'blue',
-        'subtitle' => 'Activos en el sistema',
-        'trend' => 'up'
-    ]) ?>
-    
-    <?= renderStatCard([
-        'title' => 'Total Sesiones', 
-        'value' => $totalSesiones,
-        'icon' => 'fas fa-calendar-alt',
-        'color' => 'green',
-        'subtitle' => count($sesionesActivas) . ' activas en este momento',
-        'trend' => 'neutral'
-    ]) ?>
-    
-    <div class="sm:col-span-2 lg:col-span-1">
-        <?= renderStatCard([
-            'title' => 'Total Estudiantes',
-            'value' => $totalEstudiantes,
-            'icon' => 'fas fa-users',
-            'color' => 'purple',
-            'subtitle' => 'Registrados en el sistema',
-            'trend' => 'up'
-        ]) ?>
+<!-- Cabecera limpia -->
+<div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+    <div>
+        <h1 class="text-2xl font-bold text-gray-900">
+            Hola, <?= htmlspecialchars(explode(' ', $_SESSION['nombre'])[0]) ?>
+        </h1>
+        <p class="text-sm text-gray-500 mt-0.5">Panel de administración del sistema de asistencia</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <a href="index.php?page=cursos"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 text-sm font-medium rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors">
+            <i class="fas fa-book text-blue-600"></i>
+            <span>Cursos</span>
+        </a>
+        <a href="index.php?page=sesiones"
+           class="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+            <i class="fas fa-plus"></i>
+            <span>Nueva Sesion</span>
+        </a>
     </div>
 </div>
-    
-<!-- Sección de Sesiones Activas -->
-<?php
-$sesionesTableHeaders = [
-    'curso_nombre' => ['label' => 'Curso', 'field' => 'curso_nombre'],
-    'fecha' => ['label' => 'Fecha & Hora', 'field' => 'fecha', 'format' => 'datetime'],
-    'programa' => ['label' => 'Programa', 'field' => 'programa'],
-    'grupo' => ['label' => 'Grupo', 'field' => 'grupo', 'format' => 'badge', 'badgeType' => 'primary']
-];
 
-$sesionesTableActions = [
-    [
-        'text' => 'Enlace',
-        'icon' => 'fas fa-external-link-alt',
-        'type' => 'primary',
-        'url' => 'index.php?page=asistencia&sesion_id={id}',
-        'class' => 'target="_blank"'
-    ],
-    [
-        'text' => 'Exportar',
-        'icon' => 'fas fa-download', 
-        'type' => 'success',
-        'url' => 'index.php?page=exportar&sesion_id={id}'
-    ],
-    [
-        'text' => 'Imprimir',
-        'icon' => 'fas fa-print',
-        'type' => 'info',
-        'url' => 'index.php?page=exportar&sesion_id={id}&format=print',
-        'class' => 'target="_blank"'
-    ],
-    [
-        'text' => 'Finalizar',
-        'icon' => 'fas fa-stop',
-        'type' => 'danger',
-        'url' => 'index.php?page=sesiones&deactivate={id}',
-        'onclick' => 'return confirm("¿Está seguro de finalizar esta sesión?")'
-    ]
-];
-?>
+<!-- KPI Cards -->
+<div class="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6">
+    <!-- Cursos -->
+    <a href="index.php?page=cursos" class="block bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                <i class="fas fa-book text-blue-600 text-base"></i>
+            </div>
+            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Cursos</span>
+        </div>
+        <p class="text-3xl font-bold text-gray-900"><?= (int)$totalCursos ?></p>
+        <p class="text-xs text-gray-500 mt-1">Activos en el sistema</p>
+    </a>
 
-<?= renderCard([
-    'title' => '<i class="fas fa-clock text-blue-600 mr-2"></i>Sesiones Activas',
-    'titleExtra' => renderBadge(['text' => count($sesionesActivas) . ' activa(s)', 'type' => 'success']),
-    'content' => renderTable([
-        'headers' => $sesionesTableHeaders,
-        'data' => $sesionesActivas,
-        'actions' => $sesionesTableActions,
-        'searchable' => true,
-        'responsive' => true,
-        'emptyMessage' => 'No hay sesiones activas. <a href="index.php?page=sesiones" class="text-blue-600 hover:text-blue-800">Crear Nueva Sesión</a>'
-    ]),
-    'extraClasses' => 'overflow-hidden'
-]) ?>
+    <!-- Sesiones -->
+    <a href="index.php?page=sesiones" class="block bg-white border border-gray-100 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow">
+        <div class="flex items-center gap-3 mb-3">
+            <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+                <i class="fas fa-calendar-alt text-emerald-600 text-base"></i>
+            </div>
+            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Sesiones</span>
+        </div>
+        <p class="text-3xl font-bold text-gray-900"><?= (int)$totalSesiones ?></p>
+        <p class="text-xs text-gray-500 mt-1">
+            <?= count($sesionesActivas) ?> activa<?= count($sesionesActivas) !== 1 ? 's' : '' ?> ahora
+        </p>
+    </a>
 
+    <!-- Estudiantes -->
+    <div class="col-span-2 lg:col-span-1">
+        <div class="bg-white border border-gray-100 rounded-xl shadow-sm p-4 h-full">
+            <div class="flex items-center gap-3 mb-3">
+                <div class="w-10 h-10 rounded-lg bg-violet-50 flex items-center justify-center shrink-0">
+                    <i class="fas fa-users text-violet-600 text-base"></i>
+                </div>
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Estudiantes</span>
+            </div>
+            <p class="text-3xl font-bold text-gray-900"><?= (int)$totalEstudiantes ?></p>
+            <p class="text-xs text-gray-500 mt-1">Registrados en el sistema</p>
+        </div>
+    </div>
+</div>
+
+<!-- Sesiones activas ahora -->
+<div class="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
+    <!-- Header del bloque -->
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <?php if (count($sesionesActivas) > 0): ?>
+            <span class="relative flex h-2.5 w-2.5">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+            </span>
+            <?php else: ?>
+            <span class="inline-flex h-2.5 w-2.5 rounded-full bg-gray-300"></span>
+            <?php endif; ?>
+            <h2 class="text-base font-semibold text-gray-900">Sesiones activas</h2>
+            <?php if (count($sesionesActivas) > 0): ?>
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+                <?= count($sesionesActivas) ?>
+            </span>
+            <?php endif; ?>
+        </div>
+        <a href="index.php?page=sesiones"
+           class="text-xs text-blue-600 hover:text-blue-700 font-medium">
+            Ver todas &rarr;
+        </a>
+    </div>
+
+    <?php if (empty($sesionesActivas)): ?>
+    <!-- Estado vacío -->
+    <div class="flex flex-col items-center justify-center py-14 px-6 text-center">
+        <div class="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+            <i class="fas fa-calendar-plus text-gray-400 text-2xl"></i>
+        </div>
+        <h3 class="text-sm font-semibold text-gray-700 mb-1">No hay sesiones activas ahora</h3>
+        <p class="text-xs text-gray-400 max-w-xs mb-5">
+            Crea una nueva sesion para que los estudiantes puedan registrar su asistencia en tiempo real.
+        </p>
+        <a href="index.php?page=sesiones"
+           class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors shadow-sm">
+            <i class="fas fa-plus text-xs"></i>
+            Crear sesion
+        </a>
+    </div>
+
+    <?php else: ?>
+    <!-- Lista de sesiones activas -->
+    <div class="divide-y divide-gray-50">
+        <?php foreach ($sesionesActivas as $sa): ?>
+        <?php
+            $enlaceUrl = APP_URL . '/index.php?page=asistencia&token=' . urlencode($sa['token'] ?? '');
+            $totalAsis = (int)($sa['total_asistencias'] ?? 0);
+        ?>
+        <div class="px-5 py-4 hover:bg-gray-50/60 transition-colors">
+            <div class="flex items-start sm:items-center justify-between gap-4">
+                <!-- Info de la sesion -->
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <p class="text-sm font-semibold text-gray-900 truncate">
+                            <?= htmlspecialchars($sa['curso_nombre'] ?? '') ?>
+                        </p>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-100 shrink-0">
+                            <i class="fas fa-user-check text-[10px]"></i>
+                            <?= $totalAsis ?> asistente<?= $totalAsis !== 1 ? 's' : '' ?>
+                        </span>
+                    </div>
+                    <p class="text-xs text-gray-500">
+                        <i class="fas fa-clock text-[10px] mr-1 opacity-60"></i>
+                        <?= date('d/m/Y', strtotime($sa['fecha'])) ?>
+                        &bull; <?= date('H:i', strtotime($sa['hora_inicio'])) ?>
+                        <?php $aulaMostrar = $sa['aula_display'] ?? $sa['aula'] ?? ''; ?>
+                        <?php if (!empty($aulaMostrar)): ?>
+                        &bull; Aula <?= htmlspecialchars($aulaMostrar) ?>
+                        <?php endif; ?>
+                        <?php $sedeMostrar = $sa['sede_display'] ?? $sa['sede'] ?? ''; ?>
+                        <?php if (!empty($sedeMostrar)): ?>
+                        &bull; <?= htmlspecialchars($sedeMostrar) ?>
+                        <?php endif; ?>
+                    </p>
+                </div>
+                <!-- Acciones -->
+                <div class="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    <!-- Ver detalle -->
+                    <a href="index.php?page=sesiones&action=detalle&sesion_id=<?= (int)$sa['id'] ?>"
+                       title="Ver detalle en vivo"
+                       class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-medium transition-colors border border-emerald-100">
+                        <i class="fas fa-eye"></i>
+                        <span class="hidden sm:inline">Ver sesion</span>
+                    </a>
+
+                    <?php if (!empty($sa['token'])): ?>
+                    <!-- Copiar enlace -->
+                    <button type="button"
+                            onclick="copiarEnlace(this, '<?= htmlspecialchars($enlaceUrl, ENT_QUOTES) ?>')"
+                            title="Copiar enlace de asistencia"
+                            class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-medium transition-colors border border-indigo-100">
+                        <i class="fas fa-copy"></i>
+                        <span class="hidden sm:inline">Enlace</span>
+                    </button>
+                    <?php endif; ?>
+
+                    <!-- Imprimir -->
+                    <a href="index.php?page=sesiones&action=imprimir&sesion_id=<?= (int)$sa['id'] ?>"
+                       target="_blank"
+                       title="Vista previa / imprimir"
+                       class="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-lg text-xs font-medium transition-colors border border-gray-200">
+                        <i class="fas fa-print"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
+</div>
 
 <?php
 $content = ob_get_clean();
 
-// CSS personalizado para el dashboard
-$customCSS[] = '
-/* Animaciones suaves */
+$additionalCSS = '<style>
 @keyframes slideInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
-
-.grid > div {
-    animation: slideInUp 0.6s ease-out;
-}
-
-/* Mejoras para dispositivos táctiles */
-@media (hover: none) {
-    .hover\\:shadow-xl:hover {
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-    }
-}
-
-/* Optimización para pantallas muy pequeñas */
-@media (max-width: 375px) {
-    .grid {
-        gap: 0.75rem;
-    }
-    
-    .p-6, .p-4 {
-        padding: 0.75rem;
-    }
-    
-    .px-6, .px-4 {
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
-    }
-    
-    .py-4, .py-3 {
-        padding-top: 0.5rem;
-        padding-bottom: 0.5rem;
-    }
-    
-    .mb-8, .mb-4 {
-        margin-bottom: 0.75rem;
-    }
-    
-    .rounded-xl {
-        border-radius: 0.5rem;
-    }
-}
-
-/* Mejoras de accesibilidad */
+.grid > * { animation: slideInUp 0.35s ease-out both; }
+.grid > *:nth-child(1) { animation-delay: 0.05s; }
+.grid > *:nth-child(2) { animation-delay: 0.10s; }
+.grid > *:nth-child(3) { animation-delay: 0.15s; }
 @media (prefers-reduced-motion: reduce) {
-    * {
-        animation-duration: 0.01ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.01ms !important;
+    * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+</style>';
+
+$additionalJS = '<script>
+function copiarEnlace(btn, url) {
+    const original = btn.innerHTML;
+    const ok = () => {
+        btn.innerHTML = \'<i class="fas fa-check"></i> <span class="hidden sm:inline">Copiado</span>\';
+        setTimeout(() => { btn.innerHTML = original; }, 2000);
+    };
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(ok).catch(fallback);
+    } else {
+        fallback();
+    }
+    function fallback() {
+        const ta = document.createElement("textarea");
+        ta.value = url; ta.style.cssText = "position:fixed;opacity:0";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
+        ok();
     }
 }
+</script>';
 
-/* Ajustes para el botón flotante */
-.floating-btn-container {
-    bottom: 6rem;
-    pointer-events: none;
-}
-
-.floating-btn {
-    pointer-events: auto;
-}
-
-@media (max-width: 640px) {
-    .floating-btn-container {
-        bottom: 5rem !important;
-        right: 1rem !important;
-    }
-    
-    .floating-btn {
-        width: 3rem !important;
-        height: 3rem !important;
-    }
-    
-    .floating-btn i {
-        font-size: 1rem !important;
-    }
-    
-    .tooltip-floating {
-        display: none !important;
-    }
-}
-
-@media (max-width: 768px) {
-    .floating-btn {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
-    }
-}
-';
-
-// JavaScript personalizado para el dashboard
-$customJS[] = '
-// Funcionalidad del botón flotante
-document.addEventListener("DOMContentLoaded", function() {
-    const floatingBtn = document.querySelector(".floating-btn");
-    const tooltip = document.querySelector(".tooltip-floating");
-    
-    if (floatingBtn && tooltip) {
-        floatingBtn.addEventListener("mouseenter", function() {
-            tooltip.classList.remove("opacity-0");
-            tooltip.classList.add("opacity-100");
-        });
-        
-        floatingBtn.addEventListener("mouseleave", function() {
-            tooltip.classList.remove("opacity-100");
-            tooltip.classList.add("opacity-0");
-        });
-    }
-});
-';
-
-// Botón flotante
 $floatingButton = renderFloatingActionButton([
-    'href' => 'index.php?page=sesiones',
-    'icon' => 'fas fa-plus',
-    'tooltip' => 'Crear Nueva Sesión',
-    'color' => 'blue'
+    'href'    => 'index.php?page=sesiones',
+    'icon'    => 'fas fa-plus',
+    'tooltip' => 'Nueva Sesion',
+    'color'   => 'blue',
 ]);
 
-// Incluir el layout base
 require_once '../app/views/layouts/base.php';
-?>

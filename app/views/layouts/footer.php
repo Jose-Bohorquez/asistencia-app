@@ -7,7 +7,7 @@
                     <p>&copy; <?= date('Y') ?> <?= APP_NAME ?>. Todos los derechos reservados.</p>
                 </div>
                 <div>
-                    <p>Desarrollado por Trae AI</p>
+                    <p>Universidad del Tolima &mdash; INGENIERÍA DE SISTEMAS</p>
                 </div>
             </div>
         </div>

@@ -27,7 +27,11 @@ CREATE TABLE `asistencias` (
   `sesion_id` int NOT NULL,
   `estudiante_id` int NOT NULL,
   `hora_registro` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `estado_asistencia` enum('presente','tardanza','ausente','justificado') DEFAULT 'presente',
   `firma` longtext,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `observaciones` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `sesion_id` (`sesion_id`,`estudiante_id`),
@@ -66,6 +70,10 @@ CREATE TABLE `cursos` (
   `aula` varchar(20) DEFAULT NULL,
   `sede` varchar(50) DEFAULT NULL,
   `profesor_id` int DEFAULT NULL,
+  `activo` tinyint(1) DEFAULT '1',
+  `descripcion` text DEFAULT NULL,
+  `creditos` int DEFAULT NULL,
+  `periodo_academico` varchar(20) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `profesor_id` (`profesor_id`),
@@ -94,6 +102,9 @@ CREATE TABLE `cursos_estudiantes` (
   `id` int NOT NULL AUTO_INCREMENT,
   `curso_id` int NOT NULL,
   `estudiante_id` int NOT NULL,
+  `fecha_inscripcion` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `estado` enum('inscrito','retirado','aprobado','reprobado') DEFAULT 'inscrito',
+  `nota_final` decimal(3,2) DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `curso_id` (`curso_id`,`estudiante_id`),
@@ -127,6 +138,9 @@ CREATE TABLE `estudiantes` (
   `telefono` varchar(20) DEFAULT NULL,
   `direccion` varchar(150) DEFAULT NULL,
   `correo` varchar(100) DEFAULT NULL,
+  `activo` tinyint(1) DEFAULT '1',
+  `email` varchar(100) DEFAULT NULL,
+  `fecha_nacimiento` date DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -184,9 +198,15 @@ CREATE TABLE `sesiones` (
   `fecha` date NOT NULL,
   `hora_inicio` time NOT NULL,
   `hora_fin` time DEFAULT NULL,
-  `estado` enum('activa','finalizada','cancelada') DEFAULT 'activa',
+  `estado` enum('programada','activa','finalizada','cancelada') DEFAULT 'programada',
+  `token` varchar(64) DEFAULT NULL,
+  `tema` varchar(200) DEFAULT NULL,
+  `descripcion` text DEFAULT NULL,
+  `duracion_minutos` int DEFAULT NULL,
+  `tipo_sesion` enum('teorica','practica','laboratorio','examen','taller') DEFAULT 'teorica',
+  `ubicacion` varchar(100) DEFAULT NULL,
+  `observaciones` text DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `token` varchar(32) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `token` (`token`),
   KEY `curso_id` (`curso_id`),
@@ -221,8 +241,12 @@ CREATE TABLE `usuarios` (
   `activo` tinyint(1) DEFAULT '1',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `ultimo_acceso` timestamp NULL DEFAULT NULL,
+  `remember_token` varchar(64) DEFAULT NULL,
+  `remember_expires` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `username` (`username`)
+  UNIQUE KEY `username` (`username`),
+  KEY `idx_remember_token` (`remember_token`)
 ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -235,6 +259,30 @@ LOCK TABLES `usuarios` WRITE;
 INSERT INTO `usuarios` VALUES (1,'admin','$2y$12$PZjWt4JVL.X2NakARaotMu12JpIgs1MBWGCYWs/cNLwPeBrjupUJK','Administrador','admin@universidad.edu','admin',1,'2025-07-22 00:04:46','2025-07-22 04:00:00'),(2,'superadmin','$2y$12$PZjWt4JVL.X2NakARaotMu12JpIgs1MBWGCYWs/cNLwPeBrjupUJK','Super Administrador','superadmin@universidad.edu','super_admin',1,'2025-07-22 01:24:18','2025-07-22 04:00:00'),(3,'profesor1','$2y$12$PZjWt4JVL.X2NakARaotMu12JpIgs1MBWGCYWs/cNLwPeBrjupUJK','Profesor Ejemplo','profesor1@universidad.edu','profesor',1,'2025-07-22 01:24:18','2025-07-22 04:00:00'),(4,'profe1','$2y$12$PZjWt4JVL.X2NakARaotMu12JpIgs1MBWGCYWs/cNLwPeBrjupUJK','profe1','profe1@g.com','profesor',1,'2025-07-22 02:15:33','2025-07-22 04:00:00');
 /*!40000 ALTER TABLE `usuarios` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `logs_sistema`
+--
+
+DROP TABLE IF EXISTS `logs_sistema`;
+CREATE TABLE `logs_sistema` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `usuario_id` int DEFAULT NULL,
+  `accion` varchar(100) NOT NULL,
+  `tabla_afectada` varchar(50) DEFAULT NULL,
+  `registro_id` int DEFAULT NULL,
+  `datos_anteriores` json DEFAULT NULL,
+  `datos_nuevos` json DEFAULT NULL,
+  `detalles` text DEFAULT NULL,
+  `ip_address` varchar(45) DEFAULT NULL,
+  `user_agent` text DEFAULT NULL,
+  `fecha_hora` datetime DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_usuario` (`usuario_id`),
+  KEY `idx_accion_fecha` (`accion`,`created_at`),
+  CONSTRAINT `fk_logs_usuario` FOREIGN KEY (`usuario_id`) REFERENCES `usuarios` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 --
 -- Dumping routines for database 'asistencia_db'

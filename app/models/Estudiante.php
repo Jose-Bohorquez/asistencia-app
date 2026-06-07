@@ -13,30 +13,28 @@ class Estudiante extends BaseModel {
      * Crear estudiante con validaciones
      */
     public function create($data) {
-        // Validar datos
+        // Validar datos: email es opcional (estudiantes pueden no tenerlo al momento del registro)
         $errors = $this->validate($data, [
-            'nombre' => 'required|max:100',
+            'nombre'    => 'required|max:100',
             'documento' => 'required|max:20',
-            'codigo' => 'required|max:20',
-            'email' => 'required|email|max:100'
         ]);
-        
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
+
         // Verificar que el documento no exista
         if ($this->documentoExists($data['documento'])) {
             return ['errors' => ['documento' => 'El documento ya está registrado']];
         }
-        
-        // Verificar que el código no exista
-        if ($this->codigoExists($data['codigo'])) {
+
+        // Verificar código único solo si se proporcionó
+        if (!empty($data['codigo']) && $this->codigoExists($data['codigo'])) {
             return ['errors' => ['codigo' => 'El código de estudiante ya existe']];
         }
-        
-        // Verificar que el email no exista
-        if ($this->emailExists($data['email'])) {
+
+        // Verificar email único solo si se proporcionó
+        if (!empty($data['email']) && $this->emailExists($data['email'])) {
             return ['errors' => ['email' => 'El email ya está registrado']];
         }
         
@@ -627,5 +625,44 @@ class Estudiante extends BaseModel {
                 'total' => count($estudiantes)
             ];
         }
+    }
+
+    public function countByProfesor($profesorId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("
+            SELECT COUNT(DISTINCT ce.estudiante_id) as total
+            FROM cursos_estudiantes ce
+            INNER JOIN cursos c ON ce.curso_id = c.id
+            WHERE c.profesor_id = ? AND c.activo = 1
+        ");
+        $stmt->bind_param("i", $profesorId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
+    }
+
+    public function findByDocumento($documento) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT * FROM estudiantes WHERE documento = ? LIMIT 1");
+        $stmt->bind_param("s", $documento);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row;
+    }
+
+    public function estaInscritoEnCurso($estudianteId, $cursoId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT id FROM cursos_estudiantes WHERE estudiante_id = ? AND curso_id = ?");
+        $stmt->bind_param("ii", $estudianteId, $cursoId);
+        $stmt->execute();
+        $exists = $stmt->get_result()->num_rows > 0;
+        $stmt->close();
+        return $exists;
+    }
+
+    public function getAll($conditions = []) {
+        return $this->all($conditions, 'nombre');
     }
 }

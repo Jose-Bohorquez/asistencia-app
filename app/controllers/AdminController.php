@@ -64,14 +64,21 @@ class AdminController extends BaseController {
         
         try {
             $stats = $this->getDashboardStats();
-            $sesionesActivas = $this->getSesionesActivas();
+            $sesionesActivas = $this->getSesionesActivas() ?? [];
             $recentActivity = $this->getRecentActivity();
             
             $this->render('admin/dashboard', [
-                'page_title' => 'Dashboard',
-                'stats' => $stats,
-                'sesiones_activas' => $sesionesActivas,
-                'recent_activity' => $recentActivity
+                'page_title'        => 'Dashboard',
+                'stats'             => $stats,
+                // Variables que usa la vista directamente
+                'totalCursos'       => $stats['total_cursos']      ?? 0,
+                'totalSesiones'     => $stats['total_sesiones']    ?? 0,
+                'totalEstudiantes'  => $stats['total_estudiantes'] ?? 0,
+                'totalUsuarios'     => $stats['total_usuarios']    ?? 0,
+                'asistenciaPromedio'=> $stats['asistencia_promedio'] ?? 0,
+                'sesionesActivas'   => $sesionesActivas,
+                'sesiones_activas'  => $sesionesActivas,
+                'recent_activity'   => $recentActivity
             ]);
             
         } catch (Exception $e) {
@@ -94,14 +101,59 @@ class AdminController extends BaseController {
         
         // Procesar formulario
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            // Detectar si es eliminación
+            if (!empty($_POST['_action']) && $_POST['_action'] === 'delete') {
+                if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+                    $this->setFlashMessage('Token de seguridad inválido', 'error');
+                    $this->redirect('index.php?page=cursos');
+                    return;
+                }
+                if (!$this->hasPermission('cursos_delete')) {
+                    $this->setFlashMessage('No tienes permisos para eliminar cursos', 'error');
+                    $this->redirect('index.php?page=cursos');
+                    return;
+                }
+                $deleteId = intval($_POST['delete_id'] ?? 0);
+                if ($deleteId > 0) {
+                    try {
+                        // Verificar que no tenga sesiones asociadas
+                        $sesiones = $this->sesionModel->countByProfesor(0); // placeholder
+                        $conn = $this->db;
+                        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM sesiones WHERE curso_id = ?");
+                        $stmt->bind_param('i', $deleteId);
+                        $stmt->execute();
+                        $sesCount = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
+                        $stmt->close();
+
+                        if ($sesCount > 0) {
+                            $this->setFlashMessage("No se puede eliminar: el curso tiene {$sesCount} sesión(es) asociada(s)", 'error');
+                        } else {
+                            $delResult = $this->cursoModel->delete($deleteId);
+                            if ($delResult && !is_array($delResult)) {
+                                $this->logActivity('curso_deleted', 'cursos', $deleteId);
+                                $this->setFlashMessage('Curso eliminado correctamente', 'success');
+                            } else {
+                                $msg = is_array($delResult) && isset($delResult['errors'])
+                                    ? implode(', ', $delResult['errors'])
+                                    : 'Error al eliminar el curso';
+                                $this->setFlashMessage($msg, 'error');
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log('AdminController curso delete: ' . $e->getMessage());
+                        $this->setFlashMessage('Error al eliminar el curso', 'error');
+                    }
+                }
+                $this->redirect('index.php?page=cursos');
+                return;
+            }
+
+            // Crear / Editar
             $result = $this->processCursoForm();
-            
             if (isset($result['error'])) {
                 $error = $result['error'];
             } else {
-                $success = $result['success'];
-                // Redirigir para evitar reenvío del formulario
-                $this->setFlashMessage($success, 'success');
+                $this->setFlashMessage($result['success'], 'success');
                 $this->redirect('index.php?page=cursos');
                 return;
             }
@@ -224,14 +276,14 @@ class AdminController extends BaseController {
         
         // Validar y sanitizar datos
         $data = [
-            'codigo' => $this->sanitizeInput($_POST['codigo'] ?? ''),
-            'nombre' => $this->sanitizeInput($_POST['nombre'] ?? ''),
-            'programa_id' => intval($_POST['programa_id'] ?? 0),
-            'area' => $this->sanitizeInput($_POST['area'] ?? ''),
-            'semestre' => intval($_POST['semestre'] ?? 0),
-            'grupo' => intval($_POST['grupo'] ?? 0),
-            'aula' => $this->sanitizeInput($_POST['aula'] ?? ''),
-            'sede' => $this->sanitizeInput($_POST['sede'] ?? '')
+            'codigo'     => $this->sanitizeInput($_POST['codigo'] ?? ''),
+            'nombre'     => $this->sanitizeInput($_POST['nombre'] ?? ''),
+            'programa_id'=> intval($_POST['programa_id'] ?? 0),
+            'area'       => $this->sanitizeInput($_POST['area'] ?? ''),
+            'semestre'   => $this->sanitizeInput($_POST['semestre'] ?? ''),
+            'grupo'      => $this->sanitizeInput($_POST['grupo'] ?? ''),
+            'aula'       => $this->sanitizeInput($_POST['aula'] ?? ''),
+            'sede'       => $this->sanitizeInput($_POST['sede'] ?? '')
         ];
         
         // Asignar profesor según el rol
@@ -257,7 +309,7 @@ class AdminController extends BaseController {
                     return ['error' => implode(', ', $result['errors'])];
                 }
                 
-                $this->logActivity('curso_updated', $id, null, $data);
+                $this->logActivity('curso_updated', 'cursos', $id, $data);
                 return ['success' => 'Curso actualizado correctamente'];
                 
             } else {
@@ -267,12 +319,13 @@ class AdminController extends BaseController {
                     return ['error' => implode(', ', $result['errors'])];
                 }
                 
-                $this->logActivity('curso_created', $result, null, $data);
+                $this->logActivity('curso_created', 'cursos', $result, $data);
                 return ['success' => 'Curso creado correctamente'];
             }
             
         } catch (Exception $e) {
-            return ['error' => 'Error al procesar el curso: ' . $e->getMessage()];
+            error_log('procesarCursoForm error: ' . $e->getMessage());
+            return ['error' => 'Error al procesar el curso. Intente nuevamente.'];
         }
     }
     
@@ -459,9 +512,7 @@ class AdminController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        
-        // Redirigir al login con mensaje de error de permisos
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**

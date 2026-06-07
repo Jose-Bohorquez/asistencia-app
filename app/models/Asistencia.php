@@ -7,7 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class Asistencia extends BaseModel {
     protected $table = 'asistencias';
-    protected $fillable = ['sesion_id', 'estudiante_id', 'presente', 'hora_registro', 'ip_address', 'user_agent', 'observaciones'];
+    protected $fillable = ['sesion_id', 'estudiante_id', 'presente', 'hora_registro', 'ip_address', 'user_agent', 'observaciones', 'firma', 'firma_hash'];
     
     /**
      * Registrar asistencia
@@ -104,6 +104,9 @@ class Asistencia extends BaseModel {
                 e.nombre as estudiante_nombre,
                 e.documento as estudiante_documento,
                 e.codigo as estudiante_codigo,
+                e.telefono as estudiante_telefono,
+                e.direccion as estudiante_direccion,
+                COALESCE(NULLIF(e.email,''), e.correo, '') as estudiante_correo,
                 e.email as estudiante_email
             FROM asistencias a
             INNER JOIN estudiantes e ON a.estudiante_id = e.id
@@ -557,5 +560,142 @@ class Asistencia extends BaseModel {
         
         $stmt->close();
         return $resumen;
+    }
+
+    public function getPromedioGeneral() {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN estado_asistencia = 'presente' OR estado_asistencia IS NULL THEN 1 ELSE 0 END) as presentes
+            FROM asistencias
+        ");
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || $row['total'] == 0) return 0;
+        return round(($row['presentes'] / $row['total']) * 100, 1);
+    }
+
+    public function getPromedioByProfesor($profesorId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("
+            SELECT
+                COUNT(a.id) as total,
+                SUM(CASE WHEN a.estado_asistencia = 'presente' OR a.estado_asistencia IS NULL THEN 1 ELSE 0 END) as presentes
+            FROM asistencias a
+            INNER JOIN sesiones s ON a.sesion_id = s.id
+            INNER JOIN cursos c ON s.curso_id = c.id
+            WHERE c.profesor_id = ?
+        ");
+        $stmt->bind_param("i", $profesorId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row || $row['total'] == 0) return 0;
+        return round(($row['presentes'] / $row['total']) * 100, 1);
+    }
+
+    public function getWithFilters($filtros) {
+        $conn = $this->getConnection();
+        $where = [];
+        $params = [];
+        $types = '';
+
+        if (!empty($filtros['curso_id'])) {
+            $where[] = 's.curso_id = ?'; $params[] = $filtros['curso_id']; $types .= 'i';
+        }
+        if (!empty($filtros['profesor_id'])) {
+            $where[] = 'c.profesor_id = ?'; $params[] = $filtros['profesor_id']; $types .= 'i';
+        }
+        if (!empty($filtros['fecha_inicio'])) {
+            $where[] = 's.fecha >= ?'; $params[] = $filtros['fecha_inicio']; $types .= 's';
+        }
+        if (!empty($filtros['fecha_fin'])) {
+            $where[] = 's.fecha <= ?'; $params[] = $filtros['fecha_fin']; $types .= 's';
+        }
+
+        $sql = "SELECT a.*, e.nombre as estudiante_nombre, e.documento,
+                       s.fecha, s.hora_inicio, c.nombre as curso_nombre
+                FROM asistencias a
+                INNER JOIN estudiantes e ON a.estudiante_id = e.id
+                INNER JOIN sesiones s ON a.sesion_id = s.id
+                INNER JOIN cursos c ON s.curso_id = c.id"
+             . ($where ? ' WHERE ' . implode(' AND ', $where) : '')
+             . " ORDER BY s.fecha DESC, a.hora_registro DESC";
+
+        $page    = (int)($filtros['page'] ?? 1);
+        $perPage = (int)($filtros['per_page'] ?? 20);
+        $offset  = ($page - 1) * $perPage;
+        $sql .= " LIMIT $offset, $perPage";
+
+        $stmt = $conn->prepare($sql);
+        if ($params) $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $data = [];
+        while ($row = $result->fetch_assoc()) $data[] = $row;
+        $stmt->close();
+        return $data;
+    }
+
+    public function getEstadisticasResumen($filtros) {
+        $conn = $this->getConnection();
+        $where = [];
+        $params = [];
+        $types = '';
+
+        if (!empty($filtros['curso_id'])) {
+            $where[] = 's.curso_id = ?'; $params[] = $filtros['curso_id']; $types .= 'i';
+        }
+        if (!empty($filtros['profesor_id'])) {
+            $where[] = 'c.profesor_id = ?'; $params[] = $filtros['profesor_id']; $types .= 'i';
+        }
+
+        $sql = "SELECT COUNT(*) as total,
+                       SUM(CASE WHEN a.estado_asistencia='presente' OR a.estado_asistencia IS NULL THEN 1 ELSE 0 END) as presentes
+                FROM asistencias a
+                INNER JOIN sesiones s ON a.sesion_id = s.id
+                INNER JOIN cursos c ON s.curso_id = c.id"
+             . ($where ? ' WHERE ' . implode(' AND ', $where) : '');
+
+        $stmt = $conn->prepare($sql);
+        if ($params) $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        $total = (int)($row['total'] ?? 0);
+        $presentes = (int)($row['presentes'] ?? 0);
+        return [
+            'total'     => $total,
+            'presentes' => $presentes,
+            'ausentes'  => $total - $presentes,
+            'porcentaje'=> $total > 0 ? round(($presentes / $total) * 100, 1) : 0,
+        ];
+    }
+
+    public function yaRegistroAsistencia($sesionId, $estudianteId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT id FROM asistencias WHERE sesion_id = ? AND estudiante_id = ?");
+        $stmt->bind_param("ii", $sesionId, $estudianteId);
+        $stmt->execute();
+        $exists = $stmt->get_result()->num_rows > 0;
+        $stmt->close();
+        return $exists;
+    }
+
+    public function exportar($filtros) {
+        return $this->getWithFilters(array_merge($filtros, ['page' => 1, 'per_page' => 10000]));
+    }
+
+    public function getAsistenciasByFilters($cursoId, $fechaInicio, $fechaFin) {
+        return $this->getWithFilters([
+            'curso_id'     => $cursoId,
+            'fecha_inicio' => $fechaInicio,
+            'fecha_fin'    => $fechaFin,
+            'page'         => 1,
+            'per_page'     => 10000,
+        ]);
     }
 }

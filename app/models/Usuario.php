@@ -7,7 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class Usuario extends BaseModel {
     protected $table = 'usuarios';
-    protected $fillable = ['username', 'password', 'nombre', 'email', 'rol', 'activo', 'ultimo_acceso'];
+    protected $fillable = ['username', 'password', 'nombre', 'email', 'telefono', 'rol', 'activo', 'estado_cuenta', 'foto_perfil', 'fecha_nacimiento', 'documento', 'notif_email', 'ultimo_acceso'];
     protected $hidden = ['password'];
     
     // Roles disponibles
@@ -16,29 +16,207 @@ class Usuario extends BaseModel {
     const ROLE_PROFESOR = 'profesor';
     
     /**
-     * Autenticar usuario
+     * Autenticar usuario.
+     * Devuelve el array del usuario (sin password) en éxito,
+     * o ['errors' => [...]] en fallo — consistente con el resto de métodos.
      */
     public function authenticate($username, $password) {
+        // Verificar bloqueo por IP antes de consultar BD
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        if ($this->isIpBlocked($ip)) {
+            return ['errors' => ['Demasiados intentos fallidos. Cuenta bloqueada temporalmente. Intenta en 15 minutos.']];
+        }
+
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("SELECT * FROM usuarios WHERE username = ? AND activo = 1");
-        $stmt->bind_param("s", $username);
+        // Busca por username o email, en cualquier estado (para dar errores precisos)
+        $stmt = $conn->prepare(
+            "SELECT * FROM usuarios WHERE (username = ? OR email = ?) AND activo = 1 LIMIT 1"
+        );
+        $stmt->bind_param("ss", $username, $username);
         $stmt->execute();
         $result = $stmt->get_result();
         $user = $result->fetch_assoc();
         $stmt->close();
-        
+
         if ($user && password_verify($password, $user['password'])) {
-            // Actualizar último acceso
+            // Verificar estado de cuenta
+            $estadoCuenta = $user['estado_cuenta'] ?? 'activo';
+            if ($estadoCuenta === 'pendiente_activacion') {
+                return ['errors' => ['pendiente_activacion' => 'Su cuenta aún no ha sido activada. Revise su correo electrónico para completar el registro.']];
+            }
+            if ($estadoCuenta === 'inactivo') {
+                return ['errors' => ['Su cuenta ha sido desactivada. Contacte al administrador.']];
+            }
+
+            // Login exitoso: resetear contador de intentos fallidos
+            $this->clearFailedAttempts($ip);
             $this->updateLastAccess($user['id']);
-            
-            // Registrar login en logs
             $this->logActivity('login', $user['id']);
-            
-            // Ocultar password antes de retornar
             return $this->hideFields($user);
         }
-        
-        return false;
+
+        // Login fallido: registrar intento
+        $this->recordFailedAttempt($ip, $username);
+        return ['errors' => ['Usuario o contraseña incorrectos.']];
+    }
+
+    /**
+     * Crear usuario en estado pendiente_activacion (sin contraseña).
+     * Se usa en el flujo de pre-registro: el admin crea el usuario y el sistema
+     * envía un correo de activación para que el usuario defina su contraseña.
+     */
+    public function createPendiente(array $data): int|array {
+        // Validar campos mínimos
+        $errors = $this->validate($data, [
+            'nombre' => 'required|max:100',
+            'email'  => 'required|email|max:100',
+            'rol'    => 'required',
+        ]);
+        if (!empty($errors)) {
+            return ['errors' => $errors];
+        }
+
+        if ($this->emailExists($data['email'])) {
+            return ['errors' => ['email' => 'El email ya está registrado en el sistema.']];
+        }
+
+        // Generar username provisional desde email si no se proporcionó
+        if (empty($data['username'])) {
+            $data['username'] = strtolower(explode('@', $data['email'])[0]) . '_' . substr(md5(uniqid()), 0, 4);
+        }
+        if ($this->usernameExists($data['username'])) {
+            $data['username'] .= '_' . substr(md5(uniqid()), 0, 4);
+        }
+
+        $data['password']      = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT); // temporal
+        $data['estado_cuenta'] = 'pendiente_activacion';
+        $data['activo']        = 1;
+
+        $userId = parent::create($data);
+        if ($userId) {
+            $this->logActivity('create_pendiente', $userId, null, ['email' => $data['email'], 'rol' => $data['rol']]);
+        }
+        return $userId;
+    }
+
+    /**
+     * Activar cuenta: establece contraseña y datos de perfil, cambia estado a 'activo'.
+     */
+    public function activarCuenta(int $userId, array $data): bool|array {
+        if (empty($data['password']) || strlen($data['password']) < 8) {
+            return ['errors' => ['password' => 'La contraseña debe tener al menos 8 caracteres.']];
+        }
+        if (empty($data['nombre'])) {
+            return ['errors' => ['nombre' => 'El nombre es obligatorio.']];
+        }
+
+        $updateData = [
+            'password'      => password_hash($data['password'], PASSWORD_DEFAULT),
+            'nombre'        => $data['nombre'],
+            'estado_cuenta' => 'activo',
+        ];
+        if (!empty($data['telefono'])) {
+            $updateData['telefono'] = $data['telefono'];
+        }
+        if (!empty($data['username'])) {
+            if (!$this->usernameExists($data['username'], $userId)) {
+                $updateData['username'] = $data['username'];
+            }
+        }
+
+        $ok = parent::update($userId, $updateData);
+        if ($ok) {
+            $this->logActivity('cuenta_activada', $userId);
+        }
+        return $ok;
+    }
+
+    /**
+     * Busca un usuario por email exacto (incluye inactivos).
+     */
+    public function findByEmail(string $email): ?array {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT * FROM usuarios WHERE email = ? LIMIT 1");
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ?: null;
+    }
+
+    /**
+     * Cuenta de roles disponibles para crear según el actor.
+     */
+    public function getRolesPermitidosParaCrear(string $rolActor): array {
+        if ($rolActor === self::ROLE_SUPER_ADMIN) {
+            return [
+                'super_admin' => 'Super Administrador',
+                'admin'       => 'Administrador',
+                'profesor'    => 'Profesor',
+            ];
+        }
+        // El admin solo puede crear admin y profesor
+        return [
+            'admin'   => 'Administrador',
+            'profesor' => 'Profesor',
+        ];
+    }
+
+    // -----------------------------------------------------------------------
+    // Protección contra fuerza bruta (IP-based, almacenado en archivos tmp)
+    // -----------------------------------------------------------------------
+    private const MAX_ATTEMPTS  = 5;
+    private const LOCKOUT_TIME  = 900; // 15 minutos en segundos
+
+    private function getLockoutFile($ip) {
+        return sys_get_temp_dir() . '/login_block_' . md5($ip) . '.json';
+    }
+
+    private function isIpBlocked($ip) {
+        $file = $this->getLockoutFile($ip);
+        if (!file_exists($file)) {
+            return false;
+        }
+        $data = json_decode(file_get_contents($file), true);
+        if (!$data) {
+            return false;
+        }
+        // Limpiar entradas antiguas
+        $now = time();
+        $data['attempts'] = array_filter($data['attempts'] ?? [], function($ts) use ($now) {
+            return ($now - $ts) < self::LOCKOUT_TIME;
+        });
+        if (count($data['attempts']) < self::MAX_ATTEMPTS) {
+            return false;
+        }
+        return true;
+    }
+
+    private function recordFailedAttempt($ip, $username) {
+        $file = $this->getLockoutFile($ip);
+        $now  = time();
+        $data = ['attempts' => []];
+        if (file_exists($file)) {
+            $existing = json_decode(file_get_contents($file), true);
+            if ($existing) {
+                $data = $existing;
+            }
+        }
+        // Conservar solo intentos dentro de la ventana de tiempo
+        $data['attempts'] = array_values(array_filter($data['attempts'] ?? [], function($ts) use ($now) {
+            return ($now - $ts) < self::LOCKOUT_TIME;
+        }));
+        $data['attempts'][] = $now;
+        $data['last_username'] = $username;
+        file_put_contents($file, json_encode($data), LOCK_EX);
+        error_log("Failed login attempt from IP {$ip} for username '{$username}'. Total: " . count($data['attempts']));
+    }
+
+    private function clearFailedAttempts($ip) {
+        $file = $this->getLockoutFile($ip);
+        if (file_exists($file)) {
+            unlink($file);
+        }
     }
     
     /**
@@ -52,7 +230,7 @@ class Usuario extends BaseModel {
         // Validar datos
         $errors = $this->validate($data, [
             'username' => 'required|min:3|max:50',
-            'password' => 'required|min:6',
+            'password' => 'required|min:8',
             'nombre' => 'required|max:100',
             'email' => 'required|email|max:100',
             'rol' => 'required'
@@ -96,21 +274,22 @@ class Usuario extends BaseModel {
             unset($data['password']);
         }
         
-        // Validar datos
-        $rules = [
+        // Solo valida los campos presentes en $data (permite actualizaciones parciales
+        // como ['activo'=>0] sin exigir nombre, email y rol).
+        $allRules = [
             'nombre' => 'required|max:100',
-            'email' => 'required|email|max:100',
-            'rol' => 'required'
+            'email'  => 'required|email|max:100',
+            'rol'    => 'required',
         ];
-        
+        $rules = array_intersect_key($allRules, $data);
+
         if (isset($data['username'])) {
             $rules['username'] = 'required|min:3|max:50';
         }
-        
         if (isset($data['password']) && !empty($data['password'])) {
-            $rules['password'] = 'required|min:6';
+            $rules['password'] = 'required|min:8';
         }
-        
+
         $errors = $this->validate($data, $rules);
         
         if (!empty($errors)) {
@@ -142,8 +321,9 @@ class Usuario extends BaseModel {
     public function delete($id) {
         $oldData = $this->find($id);
         
-        // En lugar de eliminar, desactivar el usuario
-        $success = $this->update($id, ['activo' => 0]);
+        // Soft-delete: desactivar. Usa parent::update() para evitar
+        // validación de campos requeridos (nombre, email, rol) en update parcial.
+        $success = parent::update($id, ['activo' => 0]);
         
         if ($success) {
             $this->logActivity('delete', $id, $oldData);
@@ -292,7 +472,7 @@ class Usuario extends BaseModel {
         }
         
         // Validar nueva password
-        $errors = $this->validate(['password' => $newPassword], ['password' => 'required|min:6']);
+        $errors = $this->validate(['password' => $newPassword], ['password' => 'required|min:8']);
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
@@ -342,6 +522,177 @@ class Usuario extends BaseModel {
         return $stats;
     }
     
+    // -----------------------------------------------------------------------
+    // Remember-me token management
+    // -----------------------------------------------------------------------
+
+    /**
+     * Guardar token "recordarme" en la base de datos.
+     * Requiere columna remember_token VARCHAR(64) y remember_expires DATETIME en usuarios.
+     */
+    public function saveRememberToken($userId, $token, $expires) {
+        $conn = $this->getConnection();
+        $hashedToken = hash('sha256', $token);
+        $stmt = $conn->prepare(
+            "UPDATE usuarios SET remember_token = ?, remember_expires = ? WHERE id = ? AND activo = 1"
+        );
+        $stmt->bind_param("ssi", $hashedToken, $expires, $userId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    /**
+     * Obtener usuario por token "recordarme".
+     * El token en cookie se compara hasheado contra lo almacenado.
+     */
+    public function getUserByRememberToken($token) {
+        $conn = $this->getConnection();
+        $hashedToken = hash('sha256', $token);
+        $stmt = $conn->prepare(
+            "SELECT * FROM usuarios
+             WHERE remember_token = ?
+               AND remember_expires > NOW()
+               AND activo = 1
+             LIMIT 1"
+        );
+        $stmt->bind_param("s", $hashedToken);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $user = $result->fetch_assoc();
+        $stmt->close();
+        return $user ? $this->hideFields($user) : null;
+    }
+
+    /**
+     * Limpiar token "recordarme" de la base de datos.
+     */
+    public function clearRememberToken($token) {
+        $conn = $this->getConnection();
+        $hashedToken = hash('sha256', $token);
+        $stmt = $conn->prepare(
+            "UPDATE usuarios SET remember_token = NULL, remember_expires = NULL WHERE remember_token = ?"
+        );
+        $stmt->bind_param("s", $hashedToken);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    // -----------------------------------------------------------------------
+
+    /**
+     * Usuarios paginados con filtros
+     */
+    public function getPaginated($page, $perPage, $filters = []) {
+        $conn   = $this->getConnection();
+        $sql    = "SELECT * FROM usuarios WHERE 1=1";
+        $params = [];
+        $types  = '';
+
+        if (!empty($filters['search'])) {
+            $sql .= ' AND (username LIKE ? OR nombre LIKE ? OR email LIKE ?)';
+            $term = '%' . $filters['search'] . '%';
+            $params[] = $term; $params[] = $term; $params[] = $term;
+            $types   .= 'sss';
+        }
+        if (isset($filters['rol']) && $filters['rol'] !== '') {
+            $sql .= ' AND rol = ?';
+            $params[] = $filters['rol'];
+            $types   .= 's';
+        }
+        if (isset($filters['activo']) && $filters['activo'] !== '') {
+            $sql .= ' AND activo = ?';
+            $params[] = (int)$filters['activo'];
+            $types   .= 'i';
+        }
+
+        // Count
+        $countSql = 'SELECT COUNT(*) as total FROM usuarios WHERE 1=1' . substr($sql, strlen("SELECT * FROM usuarios WHERE 1=1"));
+        $stmt = $conn->prepare($countSql);
+        if (!empty($params)) $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $total = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
+        $stmt->close();
+
+        // Page
+        $offset   = ($page - 1) * $perPage;
+        $sql     .= ' ORDER BY nombre LIMIT ? OFFSET ?';
+        $params[] = $perPage;
+        $params[] = $offset;
+        $types   .= 'ii';
+
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $data   = [];
+        while ($row = $result->fetch_assoc()) $data[] = $this->hideFields($row);
+        $stmt->close();
+
+        return [
+            'data' => $data,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page'     => $perPage,
+                'total'        => $total,
+                'total_pages'  => $total > 0 ? (int)ceil($total / $perPage) : 1,
+            ],
+        ];
+    }
+
+    /**
+     * Retorna los roles disponibles del sistema
+     */
+    public function getRoles() {
+        return [
+            'super_admin' => 'Super Administrador',
+            'admin'       => 'Administrador',
+            'profesor'    => 'Profesor',
+        ];
+    }
+
+    /**
+     * Cuenta los cursos activos asociados a un usuario (profesor)
+     */
+    public function countAssociatedCourses($userId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos WHERE profesor_id = ? AND activo = 1");
+        $stmt->bind_param('i', $userId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
+    }
+
+    /**
+     * Retorna todos los usuarios activos para exportación
+     */
+    public function exportar() {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare(
+            "SELECT id, username, nombre, email, rol, activo, created_at, ultimo_acceso
+             FROM usuarios WHERE activo = 1 ORDER BY nombre"
+        );
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $data   = [];
+        while ($row = $result->fetch_assoc()) $data[] = $row;
+        $stmt->close();
+        return $data;
+    }
+
+    /**
+     * Busca un usuario por username exacto
+     */
+    public function findByUsername($username) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT * FROM usuarios WHERE username = ? LIMIT 1");
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ? $this->hideFields($row) : null;
+    }
+
     /**
      * Buscar usuarios
      */
@@ -372,5 +723,89 @@ class Usuario extends BaseModel {
         
         $stmt->close();
         return $users;
+    }
+
+    // -----------------------------------------------------------------------
+    // Recuperación de contraseña
+    // -----------------------------------------------------------------------
+
+    /**
+     * Solicita un reset de contraseña para el email dado.
+     * Genera un token SHA-256, lo almacena y envía el correo.
+     * Siempre devuelve éxito para no revelar si el email está registrado.
+     */
+    public function requestPasswordReset(string $email): array {
+        require_once __DIR__ . '/TokenActivacion.php';
+        require_once __DIR__ . '/../utils/MailService.php';
+
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare(
+            "SELECT id, nombre, email, activo, estado_cuenta FROM usuarios WHERE email = ? LIMIT 1"
+        );
+        $stmt->bind_param('s', $email);
+        $stmt->execute();
+        $usuario = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        // No revelar si el email existe o no (anti-enumeración)
+        if (!$usuario || !$usuario['activo'] || $usuario['estado_cuenta'] === 'pendiente_activacion') {
+            return ['success' => true];
+        }
+
+        $tokenModel = new TokenActivacion();
+        $tokenReal  = $tokenModel->generarToken((int)$usuario['id'], TokenActivacion::TIPO_RESET_PASSWORD);
+
+        $mailer = new MailService();
+        $mailer->enviarResetPassword($usuario['email'], $usuario['nombre'], $tokenReal);
+
+        return ['success' => true];
+    }
+
+    /**
+     * Verifica si un token de reset es válido.
+     * Devuelve el array del usuario si es válido, null si no.
+     */
+    public function verifyResetToken(string $token): ?array {
+        if (!preg_match('/^[0-9a-f]{64}$/', $token)) {
+            return null;
+        }
+        require_once __DIR__ . '/TokenActivacion.php';
+
+        $tokenModel = new TokenActivacion();
+        $registro   = $tokenModel->validarToken($token, TokenActivacion::TIPO_RESET_PASSWORD);
+        if (!$registro) {
+            return null;
+        }
+
+        $usuario = $this->find((int)$registro['usuario_id']);
+        return ($usuario && $usuario['activo']) ? $usuario : null;
+    }
+
+    /**
+     * Aplica la nueva contraseña si el token es válido e invalida el token.
+     */
+    public function resetPassword(string $token, string $nuevaPassword): array {
+        require_once __DIR__ . '/TokenActivacion.php';
+
+        $tokenModel = new TokenActivacion();
+        $registro   = $tokenModel->validarToken($token, TokenActivacion::TIPO_RESET_PASSWORD);
+        if (!$registro) {
+            return ['errors' => ['El enlace ha expirado o ya fue utilizado. Solicita uno nuevo.']];
+        }
+
+        $hash = password_hash($nuevaPassword, PASSWORD_DEFAULT);
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("UPDATE usuarios SET password = ? WHERE id = ?");
+        $stmt->bind_param('si', $hash, $registro['usuario_id']);
+        $ok   = $stmt->execute();
+        $stmt->close();
+
+        if (!$ok) {
+            return ['errors' => ['Error al actualizar la contraseña. Inténtalo de nuevo.']];
+        }
+
+        $tokenModel->marcarUsado((int)$registro['id']);
+
+        return ['success' => true];
     }
 }

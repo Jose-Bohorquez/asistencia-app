@@ -1,45 +1,58 @@
-#version: '3.8'
-
 services:
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "80:80"
+      - "8080:80"          # App en http://localhost:8080
     volumes:
       - ./:/var/www/html
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_NAME: asistencia_db
+      DB_USER: developer
+      DB_PASS: developer
+      DOCKER_CONTAINER: "true"
     networks:
       - app-network
 
   db:
-    image: mysql:8
-    restart: always
+    image: mysql:8.0
+    restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: example
-      MYSQL_DATABASE: asistencia
+      MYSQL_ROOT_PASSWORD: root_secret
+      MYSQL_DATABASE: asistencia_db
+      MYSQL_USER: developer
+      MYSQL_PASSWORD: developer
     ports:
       - "3306:3306"
     volumes:
-      - ./mysql_data:/var/lib/mysql
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
-    command: --default-authentication-plugin=mysql_native_password
-    restart: always
+      - mysql_data:/var/lib/mysql
+      - ./asistencia_db.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "developer", "-pdeveloper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - app-network
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     ports:
-      - "8080:80"
+      - "8081:80"          # phpMyAdmin en http://localhost:8081
     environment:
       PMA_HOST: db
       PMA_PORT: 3306
-      MYSQL_ROOT_PASSWORD: root
+      MYSQL_ROOT_PASSWORD: root_secret
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - app-network
 

@@ -93,23 +93,24 @@ class ProgramasController extends BaseController {
         
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = $this->procesarFormulario();
-            
             if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                } else {
+                    $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                    $this->redirect('index.php?page=programas');
+                }
             } else {
-                $this->logActivity('programa_creado', $result, null, [
-                    'programa_id' => $result
-                ]);
-                
-                $this->setFlashMessage('Programa creado correctamente', 'success');
-                $this->jsonResponse(['success' => true, 'id' => $result]);
+                $this->logActivity('programa_creado', 'programas', $result, ['programa_id' => $result]);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true, 'id' => $result]);
+                } else {
+                    $this->setFlashMessage('Programa creado correctamente', 'success');
+                    $this->redirect('index.php?page=programas');
+                }
             }
         } else {
-            $this->render('admin/programa_form', [
-                'page_title' => 'Crear Programa',
-                'programa' => null,
-                'csrf_token' => $this->generateCSRFToken()
-            ]);
+            $this->redirect('index.php?page=programas');
         }
     }
     
@@ -123,14 +124,16 @@ class ProgramasController extends BaseController {
             return;
         }
         
-        $id = intval($_GET['id'] ?? 0);
-        
+        // El id viene en POST (hidden field) cuando es form submission,
+        // o en GET cuando se navega directamente.
+        $id = intval($_POST['id'] ?? $_GET['id'] ?? 0);
+
         if ($id <= 0) {
             $this->setFlashMessage('ID de programa no válido', 'error');
             $this->redirect('index.php?page=programas');
             return;
         }
-        
+
         try {
             $programa = $this->programaModel->find($id);
             
@@ -142,24 +145,24 @@ class ProgramasController extends BaseController {
             
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $result = $this->procesarFormulario($id);
-                
                 if (isset($result['errors'])) {
-                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                    if ($this->isAjaxRequest()) {
+                        $this->jsonResponse(['errors' => $result['errors']], 400);
+                    } else {
+                        $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                        $this->redirect('index.php?page=programas');
+                    }
                 } else {
-                    $this->logActivity('programa_actualizado', $id, null, [
-                        'programa_id' => $id,
-                        'cambios' => $result['cambios'] ?? []
-                    ]);
-                    
-                    $this->setFlashMessage('Programa actualizado correctamente', 'success');
-                    $this->jsonResponse(['success' => true]);
+                    $this->logActivity('programa_actualizado', 'programas', $id, ['cambios' => $result['cambios'] ?? []]);
+                    if ($this->isAjaxRequest()) {
+                        $this->jsonResponse(['success' => true]);
+                    } else {
+                        $this->setFlashMessage('Programa actualizado correctamente', 'success');
+                        $this->redirect('index.php?page=programas');
+                    }
                 }
             } else {
-                $this->render('admin/programa_form', [
-                    'page_title' => 'Editar Programa',
-                    'programa' => $programa,
-                    'csrf_token' => $this->generateCSRFToken()
-                ]);
+                $this->redirect('index.php?page=programas');
             }
             
         } catch (Exception $e) {
@@ -171,19 +174,33 @@ class ProgramasController extends BaseController {
      * Eliminar programa
      */
     public function delete() {
-        // Verificar permisos
         if (!$this->hasPermission('programas_delete')) {
             $this->jsonResponse(['error' => 'No tienes permisos para eliminar programas'], 403);
             return;
         }
-        
-        $id = intval($_GET['id'] ?? $_POST['id'] ?? 0);
-        
-        if ($id <= 0) {
-            $this->jsonResponse(['error' => 'ID de programa no válido'], 400);
+
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'Token de seguridad inválido'], 403);
+            } else {
+                $this->setFlashMessage('Token de seguridad inválido', 'error');
+                $this->redirect('index.php?page=programas');
+            }
             return;
         }
-        
+
+        $id = intval($_POST['id'] ?? $_GET['id'] ?? 0);
+
+        if ($id <= 0) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'ID de programa no válido'], 400);
+            } else {
+                $this->setFlashMessage('ID de programa no válido', 'error');
+                $this->redirect('index.php?page=programas');
+            }
+            return;
+        }
+
         try {
             $programa = $this->programaModel->find($id);
             
@@ -196,25 +213,43 @@ class ProgramasController extends BaseController {
             $cursosAsociados = $this->cursoModel->countByPrograma($id);
             
             if ($cursosAsociados > 0) {
-                $this->jsonResponse([
-                    'error' => 'No se puede eliminar el programa porque tiene ' . $cursosAsociados . ' curso(s) asociado(s)'
-                ], 409);
+                $msg = "No se puede eliminar: tiene {$cursosAsociados} curso(s) asociado(s)";
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['error' => $msg], 409);
+                } else {
+                    $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=programas');
+                }
                 return;
             }
-            
-            // Eliminar programa
+
             $result = $this->programaModel->delete($id);
-            
-            if ($result) {
-                $this->logActivity('programa_eliminado', $id, null, [
+
+            // Un array con 'errors' es truthy — hay que verificar explícitamente
+            $hasErrors = is_array($result) && isset($result['errors']);
+            $success   = $result === true || (!$hasErrors && $result);
+
+            if ($success) {
+                $this->logActivity('programa_eliminado', 'programas', $id, [
                     'programa_nombre' => $programa['nombre'],
-                    'programa_codigo' => $programa['codigo']
+                    'programa_codigo' => $programa['codigo'],
                 ]);
-                
-                $this->setFlashMessage('Programa eliminado correctamente', 'success');
-                $this->jsonResponse(['success' => true]);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true]);
+                } else {
+                    $this->setFlashMessage('Programa eliminado correctamente', 'success');
+                    $this->redirect('index.php?page=programas');
+                }
             } else {
-                $this->jsonResponse(['error' => 'Error al eliminar el programa'], 500);
+                $err = $hasErrors
+                    ? implode(', ', $result['errors'])
+                    : 'Error al eliminar el programa';
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['error' => $err], 500);
+                } else {
+                    $this->setFlashMessage($err, 'error');
+                    $this->redirect('index.php?page=programas');
+                }
             }
             
         } catch (Exception $e) {
@@ -361,12 +396,12 @@ class ProgramasController extends BaseController {
      */
     private function getFiltros() {
         return [
-            'buscar' => $_GET['buscar'] ?? '',
-            'activo' => $_GET['activo'] ?? '',
-            'orden' => $_GET['orden'] ?? 'nombre',
+            'buscar'    => $_GET['buscar']    ?? '',
+            'activo'    => $_GET['activo']    ?? '1', // por defecto solo activos
+            'orden'     => $_GET['orden']     ?? 'nombre',
             'direccion' => $_GET['direccion'] ?? 'ASC',
-            'page' => intval($_GET['page'] ?? 1),
-            'per_page' => 20
+            'page'      => max(1, intval($_GET['p'] ?? 1)),
+            'per_page'  => 20,
         ];
     }
     
@@ -459,21 +494,19 @@ class ProgramasController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**
      * Manejar errores
      */
     protected function handleProgramasError($exception, $userMessage = 'Ha ocurrido un error') {
-        // Log del error
-        error_log($exception->getMessage());
-        
+        error_log('ProgramasController: ' . $exception->getMessage());
         if ($this->isAjaxRequest()) {
             $this->jsonResponse(['error' => $userMessage], 500);
         } else {
             $this->setFlashMessage($userMessage, 'error');
-            $this->redirect('index.php?page=programas');
+            $this->redirect('index.php?page=dashboard');
         }
     }
 }

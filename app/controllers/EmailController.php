@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Email.php';
+require_once __DIR__ . '/../../config/email.php';
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
@@ -305,109 +306,31 @@ class EmailController extends BaseController {
     }
     
     /**
-     * Configurar parámetros de email
+     * Configuración SMTP — solo lectura.
+     * Las credenciales se gestionan mediante variables de entorno del servidor
+     * (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_ENCRYPTION, SMTP_FROM_EMAIL, SMTP_FROM_NAME)
+     * o en config/env.local.php para desarrollo local.
+     * No se permite modificar la configuración SMTP desde la aplicación web.
      */
     public function configureEmail() {
-        // Verificar permisos
         if (!$this->hasPermission('email_config')) {
-            $this->jsonResponse(['error' => 'No tienes permisos para configurar email'], 403);
+            $this->jsonResponse(['error' => 'No tienes permisos para ver la configuración de email'], 403);
             return;
         }
-        
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-            $this->jsonResponse(['error' => 'Método no permitido'], 405);
-            return;
-        }
-        
-        // Verificar token CSRF
-        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-            $this->jsonResponse(['error' => 'Token de seguridad inválido'], 400);
-            return;
-        }
-        
-        $config = [
-            'smtp_host' => $this->sanitizeInput($_POST['smtp_host'] ?? ''),
-            'smtp_port' => intval($_POST['smtp_port'] ?? 587),
-            'smtp_username' => $this->sanitizeInput($_POST['smtp_username'] ?? ''),
-            'smtp_password' => $_POST['smtp_password'] ?? '', // No sanitizar password
-            'smtp_encryption' => $this->sanitizeInput($_POST['smtp_encryption'] ?? 'tls'),
-            'email_from' => $this->sanitizeInput($_POST['email_from'] ?? ''),
-            'email_from_name' => $this->sanitizeInput($_POST['email_from_name'] ?? '')
-        ];
-        
-        // Validar configuración
-        $errors = [];
-        
-        if (empty($config['smtp_host'])) {
-            $errors[] = 'El servidor SMTP es obligatorio';
-        }
-        
-        if ($config['smtp_port'] <= 0 || $config['smtp_port'] > 65535) {
-            $errors[] = 'El puerto SMTP debe estar entre 1 y 65535';
-        }
-        
-        if (empty($config['email_from']) || !filter_var($config['email_from'], FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'El email remitente no es válido';
-        }
-        
-        if (!in_array($config['smtp_encryption'], ['tls', 'ssl', ''])) {
-            $errors[] = 'El tipo de encriptación no es válido';
-        }
-        
-        if (!empty($errors)) {
-            $this->jsonResponse(['errors' => $errors], 400);
-            return;
-        }
-        
-        try {
-            $result = $this->emailModel->updateConfig($config);
-            
-            if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
-            } else {
-                // Recargar configuración
-                $this->loadEmailConfig();
-                
-                $this->logActivity('email_config_updated', null, null, $config);
-                $this->jsonResponse([
-                    'success' => true,
-                    'message' => 'Configuración de email actualizada correctamente'
-                ]);
-            }
-            
-        } catch (Exception $e) {
-            $this->handleEmailError($e, 'Error al actualizar la configuración de email');
-        }
+        $this->jsonResponse([
+            'info' => 'La configuración SMTP se gestiona mediante variables de entorno del servidor.',
+            'variables' => ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_ENCRYPTION', 'SMTP_FROM_EMAIL', 'SMTP_FROM_NAME'],
+            'smtp_host_configured' => !empty($this->config['smtp_host']),
+            'smtp_from_configured' => !empty($this->config['email_from']),
+        ]);
     }
     
     /**
-     * Cargar configuración de email desde la base de datos
+     * Cargar configuración SMTP desde variables de entorno / env.local.php.
+     * Las credenciales NUNCA se leen desde la base de datos.
      */
     private function loadEmailConfig() {
-        try {
-            $this->config = $this->emailModel->getConfig();
-            
-            // Valores por defecto si no están en la BD
-            $defaults = [
-                'smtp_host' => 'smtp.gmail.com',
-                'smtp_port' => '587',
-                'smtp_username' => '',
-                'smtp_password' => '',
-                'smtp_encryption' => 'tls',
-                'email_from' => 'noreply@universidad.edu',
-                'email_from_name' => 'Sistema de Asistencia - Universidad del Tolima'
-            ];
-            
-            foreach ($defaults as $key => $value) {
-                if (!isset($this->config[$key])) {
-                    $this->config[$key] = $value;
-                }
-            }
-            
-        } catch (Exception $e) {
-            error_log('Error cargando configuración de email: ' . $e->getMessage());
-            $this->config = [];
-        }
+        $this->config = getSmtpConfig();
     }
     
     /**
@@ -589,10 +512,10 @@ class EmailController extends BaseController {
             
         } catch (Exception $e) {
             error_log('Error enviando correo: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error al enviar el correo: ' . $e->getMessage()];
+            return ['success' => false, 'message' => 'Error al enviar el correo. Verifique la configuración SMTP.'];
         }
     }
-    
+
     /**
      * Enviar email de notificación
      */
@@ -642,7 +565,7 @@ class EmailController extends BaseController {
             
         } catch (Exception $e) {
             error_log('Error enviando notificación: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error al enviar la notificación: ' . $e->getMessage()];
+            return ['success' => false, 'message' => 'Error al enviar la notificación. Verifique la configuración SMTP.'];
         }
     }
     
@@ -691,7 +614,7 @@ class EmailController extends BaseController {
             
         } catch (Exception $e) {
             error_log('Error enviando email de prueba: ' . $e->getMessage());
-            return ['success' => false, 'message' => 'Error al enviar email de prueba: ' . $e->getMessage()];
+            return ['success' => false, 'message' => 'Error al enviar el email de prueba. Verifique la configuración SMTP.'];
         }
     }
     
@@ -707,7 +630,7 @@ class EmailController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**
@@ -725,4 +648,3 @@ class EmailController extends BaseController {
         }
     }
 }
-?>

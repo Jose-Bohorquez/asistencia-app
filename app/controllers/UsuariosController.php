@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Usuario.php';
+require_once __DIR__ . '/../models/TokenActivacion.php';
+require_once __DIR__ . '/../utils/MailService.php';
 
 /**
  * Controlador de Usuarios
@@ -58,12 +60,13 @@ class UsuariosController extends BaseController {
         
         try {
             // Obtener parámetros de filtrado y paginación
-            $page = intval($_GET['page'] ?? 1);
+            // Nota: $_GET['page'] es la ruta (ej: 'usuarios'); el número de página va en 'p'
+            $page   = max(1, intval($_GET['p'] ?? 1));
             $search = $this->sanitizeInput($_GET['search'] ?? '');
-            $rol = $this->sanitizeInput($_GET['rol'] ?? '');
-            $activo = $_GET['activo'] ?? '';
-            
-            // Construir filtros
+            $rol    = $this->sanitizeInput($_GET['rol'] ?? '');
+            // Por defecto solo activos; el admin puede ver inactivos con ?activo=0
+            $activo = $_GET['activo'] ?? '1';
+
             $filters = [];
             if (!empty($search)) {
                 $filters['search'] = $search;
@@ -71,6 +74,7 @@ class UsuariosController extends BaseController {
             if (!empty($rol)) {
                 $filters['rol'] = $rol;
             }
+            // activo='' → todos; activo=1 → activos; activo=0 → inactivos
             if ($activo !== '') {
                 $filters['activo'] = intval($activo);
             }
@@ -99,9 +103,13 @@ class UsuariosController extends BaseController {
      * Crear nuevo usuario
      */
     public function create() {
-        // Verificar permisos - solo super_admin puede crear usuarios
         if (!$this->hasPermission('usuarios_create')) {
-            $this->jsonResponse(['error' => 'No tienes permisos para crear usuarios'], 403);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para crear usuarios'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para crear usuarios', 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
             return;
         }
         
@@ -111,16 +119,25 @@ class UsuariosController extends BaseController {
         }
         
         $result = $this->processUserForm();
-        
+
         if (isset($result['errors'])) {
-            $this->jsonResponse(['errors' => $result['errors']], 400);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['errors' => $result['errors']], 400);
+            } else {
+                $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
         } else {
-            $this->logActivity('usuario_created', $result['id'], null, $result['data']);
-            $this->jsonResponse([
-                'success' => true,
-                'message' => 'Usuario creado correctamente',
-                'usuario_id' => $result['id']
-            ]);
+            $this->logActivity('usuario_created', 'usuarios', $result['id'] ?? null, $result['data'] ?? []);
+            $msg = $result['email_enviado'] ?? false
+                ? 'Usuario creado. Se ha enviado un correo de activación.'
+                : 'Usuario creado. No se pudo enviar el correo de activación (revisa la configuración SMTP).';
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['success' => true, 'message' => $msg, 'usuario_id' => $result['id']]);
+            } else {
+                $this->setFlashMessage($msg, $result['email_enviado'] ?? false ? 'success' : 'warning');
+                $this->redirect('index.php?page=usuarios');
+            }
         }
     }
     
@@ -128,9 +145,13 @@ class UsuariosController extends BaseController {
      * Editar usuario existente
      */
     public function edit() {
-        // Verificar permisos - solo super_admin puede editar usuarios
         if (!$this->hasPermission('usuarios_update')) {
-            $this->jsonResponse(['error' => 'No tienes permisos para editar usuarios'], 403);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para editar usuarios'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para editar usuarios', 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
             return;
         }
         
@@ -154,22 +175,34 @@ class UsuariosController extends BaseController {
             return;
         }
         
-        // No permitir que se edite a sí mismo en ciertos casos
+        // No permitir desactivar su propio usuario
         if ($id == $this->currentUser['id'] && isset($_POST['activo']) && !$_POST['activo']) {
-            $this->jsonResponse(['error' => 'No puedes desactivar tu propio usuario'], 400);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No puedes desactivar tu propio usuario'], 400);
+            } else {
+                $this->setFlashMessage('No puedes desactivar tu propio usuario', 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
             return;
         }
         
         $result = $this->processUserForm($id);
-        
+
         if (isset($result['errors'])) {
-            $this->jsonResponse(['errors' => $result['errors']], 400);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['errors' => $result['errors']], 400);
+            } else {
+                $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
         } else {
-            $this->logActivity('usuario_updated', $id, null, $result['data']);
-            $this->jsonResponse([
-                'success' => true,
-                'message' => 'Usuario actualizado correctamente'
-            ]);
+            $this->logActivity('usuario_updated', 'usuarios', $id, $result['data'] ?? []);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['success' => true, 'message' => 'Usuario actualizado correctamente']);
+            } else {
+                $this->setFlashMessage('Usuario actualizado correctamente', 'success');
+                $this->redirect('index.php?page=usuarios');
+            }
         }
     }
     
@@ -177,26 +210,36 @@ class UsuariosController extends BaseController {
      * Eliminar usuario
      */
     public function delete() {
-        // Verificar permisos - solo super_admin puede eliminar usuarios
         if (!$this->hasPermission('usuarios_delete')) {
             $this->jsonResponse(['error' => 'No tienes permisos para eliminar usuarios'], 403);
             return;
         }
-        
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'Token de seguridad inválido'], 403);
+            } else {
+                $this->setFlashMessage('Token de seguridad inválido', 'error');
+                $this->redirect('index.php?page=usuarios');
+            }
             return;
         }
         
         $id = intval($_POST['id'] ?? 0);
         if ($id <= 0) {
-            $this->jsonResponse(['error' => 'ID de usuario no válido'], 400);
+            $this->setFlashMessage('ID de usuario no válido', 'error');
+            $this->redirect('index.php?page=usuarios');
             return;
         }
-        
-        // No permitir que se elimine a sí mismo
+
         if ($id == $this->currentUser['id']) {
-            $this->jsonResponse(['error' => 'No puedes eliminar tu propio usuario'], 400);
+            $this->setFlashMessage('No puedes eliminar tu propio usuario', 'error');
+            $this->redirect('index.php?page=usuarios');
             return;
         }
         
@@ -222,13 +265,20 @@ class UsuariosController extends BaseController {
             $result = $this->usuarioModel->delete($id);
             
             if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                } else {
+                    $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                    $this->redirect('index.php?page=usuarios');
+                }
             } else {
-                $this->logActivity('usuario_deleted', $id, null, ['usuario_eliminado' => $usuario['username']]);
-                $this->jsonResponse([
-                    'success' => true,
-                    'message' => 'Usuario eliminado correctamente'
-                ]);
+                $this->logActivity('usuario_deleted', 'usuarios', $id, ['usuario_eliminado' => $usuario['username']]);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true, 'message' => 'Usuario eliminado correctamente']);
+                } else {
+                    $this->setFlashMessage('Usuario eliminado correctamente', 'success');
+                    $this->redirect('index.php?page=usuarios');
+                }
             }
             
         } catch (Exception $e) {
@@ -328,77 +378,111 @@ class UsuariosController extends BaseController {
         if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
             return ['errors' => ['Token de seguridad inválido']];
         }
-        
-        // Validar y sanitizar datos
+
+        $esNuevo = ($id === 0);
+
+        // Sanitizar campos
         $data = [
-            'username' => $this->sanitizeInput($_POST['username'] ?? ''),
             'nombre' => $this->sanitizeInput($_POST['nombre'] ?? ''),
-            'email' => $this->sanitizeInput($_POST['email'] ?? ''),
-            'rol' => $this->sanitizeInput($_POST['rol'] ?? ''),
-            'activo' => intval($_POST['activo'] ?? 1)
+            'email'  => $this->sanitizeInput($_POST['email'] ?? ''),
+            'rol'    => $this->sanitizeInput($_POST['rol'] ?? ''),
+            'activo' => intval($_POST['activo'] ?? 1),
         ];
-        
-        // Validar password solo si se proporciona
-        $password = $_POST['password'] ?? '';
-        if (!empty($password)) {
-            $data['password'] = $password;
+        $username = $this->sanitizeInput($_POST['username'] ?? '');
+        if ($username !== '') {
+            $data['username'] = $username;
         }
-        
-        // Validar datos
+
+        // Para edición: contraseña es opcional
+        if (!$esNuevo) {
+            $password = $_POST['password'] ?? '';
+            if (!empty($password)) {
+                $data['password'] = $password;
+            }
+        }
+
         $errors = [];
-        
-        if (empty($data['username'])) {
-            $errors[] = 'El nombre de usuario es obligatorio';
-        } elseif (strlen($data['username']) > 50) {
-            $errors[] = 'El nombre de usuario no puede tener más de 50 caracteres';
-        }
-        
+
+        // Nombre siempre obligatorio
         if (empty($data['nombre'])) {
             $errors[] = 'El nombre es obligatorio';
         } elseif (strlen($data['nombre']) > 100) {
             $errors[] = 'El nombre no puede tener más de 100 caracteres';
         }
-        
-        if (!empty($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'El email no es válido';
+
+        // Email obligatorio para nuevos usuarios (se usa para el enlace de activación)
+        if ($esNuevo && empty($data['email'])) {
+            $errors[] = 'El correo electrónico es obligatorio para crear un usuario';
         }
-        
+        if (!empty($data['email']) && !filter_var($data['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = 'El correo electrónico no tiene un formato válido';
+        }
+
         if (empty($data['rol'])) {
             $errors[] = 'El rol es obligatorio';
         }
-        
-        // Validar password para nuevos usuarios
-        if ($id === 0 && empty($password)) {
-            $errors[] = 'La contraseña es obligatoria para nuevos usuarios';
+
+        // Para edición: validar contraseña si fue provista
+        if (!$esNuevo && isset($data['password']) && strlen($data['password']) < 8) {
+            $errors[] = 'La contraseña debe tener al menos 8 caracteres';
         }
-        
-        if (!empty($password) && strlen($password) < 6) {
-            $errors[] = 'La contraseña debe tener al menos 6 caracteres';
+
+        // Validar rol permitido según quien crea/edita (mínimo privilegio)
+        if (!empty($data['rol'])) {
+            $actorRol = $this->currentUser['rol'] ?? '';
+            $rolesPermitidos = $this->usuarioModel->getRolesPermitidosParaCrear($actorRol);
+            if (!array_key_exists($data['rol'], $rolesPermitidos)) {
+                $errors[] = 'No tienes permisos para asignar el rol "' . htmlspecialchars($data['rol']) . '"';
+            }
         }
-        
-        // Verificar unicidad del username
-        if (empty($errors)) {
+
+        // Verificar unicidad del username si fue enviado
+        if (empty($errors) && !empty($data['username'])) {
             $existingUser = $this->usuarioModel->findByUsername($data['username']);
-            if ($existingUser && ($id === 0 || $existingUser['id'] != $id)) {
+            if ($existingUser && ($esNuevo || $existingUser['id'] != $id)) {
                 $errors[] = 'Ya existe un usuario con ese nombre de usuario';
             }
         }
-        
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
-        // Crear o actualizar usuario
+
         try {
-            if ($id > 0) {
+            if (!$esNuevo) {
+                // Edición: flujo existente
                 $result = $this->usuarioModel->update($id, $data);
                 return isset($result['errors']) ? $result : ['success' => true, 'data' => $data];
-            } else {
-                $result = $this->usuarioModel->create($data);
-                return isset($result['errors']) ? $result : ['success' => true, 'id' => $result, 'data' => $data];
             }
+
+            // Creación: pre-registro con activación por correo
+            $newId = $this->usuarioModel->createPendiente($data);
+            if (is_array($newId)) {
+                // createPendiente devuelve array con 'errors' si falla
+                return $newId;
+            }
+
+            // Generar token y enviar correo
+            $tokenModel  = new TokenActivacion();
+            $tokenReal   = $tokenModel->generarToken($newId, TokenActivacion::TIPO_ACTIVACION);
+
+            $mailService  = new MailService();
+            $emailEnviado = $mailService->enviarActivacion($data['email'], $data['nombre'], $tokenReal);
+
+            if (!$emailEnviado) {
+                error_log("UsuariosController: no se pudo enviar correo de activación a {$data['email']} (usuario ID {$newId})");
+            }
+
+            return [
+                'success'       => true,
+                'id'            => $newId,
+                'data'          => $data,
+                'email_enviado' => $emailEnviado,
+            ];
+
         } catch (Exception $e) {
-            return ['errors' => ['Error al procesar el usuario: ' . $e->getMessage()]];
+            error_log('processUserForm error: ' . $e->getMessage());
+            return ['errors' => ['Error al procesar el usuario. Intente nuevamente.']];
         }
     }
     
@@ -465,22 +549,19 @@ class UsuariosController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**
      * Manejar errores
      */
     protected function handleUsuariosError($exception, $userMessage = 'Ha ocurrido un error') {
-        // Log del error
-        error_log($exception->getMessage());
-        
+        error_log('UsuariosController: ' . $exception->getMessage());
         if ($this->isAjaxRequest()) {
             $this->jsonResponse(['error' => $userMessage], 500);
         } else {
             $this->setFlashMessage($userMessage, 'error');
-            $this->redirect('index.php?page=usuarios');
+            $this->redirect('index.php?page=dashboard');
         }
     }
 }
-?>

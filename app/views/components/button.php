@@ -92,11 +92,18 @@ function renderButton($text = [], $options = []) {
         $attributes['disabled'] = 'disabled';
     }
     
-    // Agregar atributos adicionales
-    foreach ($options['attributes'] as $key => $value) {
-        $attributes[$key] = $value;
+    // Agregar atributos adicionales (acepta array o string raw)
+    if (is_array($options['attributes'])) {
+        foreach ($options['attributes'] as $key => $value) {
+            $attributes[$key] = $value;
+        }
     }
     
+    // Si 'attributes' es string raw, añadirlo directamente al final
+    $rawAttributeString = is_string($options['attributes']) && !empty($options['attributes'])
+        ? ' ' . $options['attributes']
+        : '';
+
     // Construir string de atributos
     $attributeString = '';
     foreach ($attributes as $key => $value) {
@@ -120,10 +127,10 @@ function renderButton($text = [], $options = []) {
     
     // Renderizar como enlace o botón
     if ($options['href'] && !$options['disabled'] && !$options['loading']) {
-        return '<a href="' . htmlspecialchars($options['href']) . '" class="' . $allClasses . '"' . $attributeString . '>' . $content . '</a>';
+        return '<a href="' . htmlspecialchars($options['href']) . '" class="' . $allClasses . '"' . $attributeString . $rawAttributeString . '>' . $content . '</a>';
     } else {
         $buttonType = $options['buttonType'];
-        return '<button type="' . $buttonType . '" class="' . $allClasses . '"' . $attributeString . '>' . $content . '</button>';
+        return '<button type="' . $buttonType . '" class="' . $allClasses . '"' . $attributeString . $rawAttributeString . '>' . $content . '</button>';
     }
 }
 

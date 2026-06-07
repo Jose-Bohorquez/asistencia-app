@@ -1,0 +1,6 @@
+# Bloquear acceso directo a archivos de configuración
+# Las credenciales y configuración NUNCA deben ser accesibles por HTTP
+<FilesMatch "\.php$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>

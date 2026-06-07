@@ -65,10 +65,12 @@ class AuthController extends BaseController {
                 } else {
                     // Intentar autenticación
                     $result = $this->usuarioModel->authenticate($username, $password);
-                    
-                    if (isset($result['errors'])) {
-                        $error = implode(', ', $result['errors']);
-                        
+
+                    if (!$result || isset($result['errors'])) {
+                        $error = isset($result['errors'])
+                            ? implode(', ', $result['errors'])
+                            : 'Usuario o contraseña incorrectos.';
+
                         // Log intento de login fallido
                         $this->logActivity('login_failed', null, null, [
                             'username' => $username,
@@ -88,6 +90,7 @@ class AuthController extends BaseController {
                         $_SESSION['rol'] = $user['rol']; // Mantener compatibilidad
                         $_SESSION['nombre'] = $user['nombre']; // Mantener compatibilidad
                         $_SESSION['email'] = $user['email']; // Mantener compatibilidad
+                        $_SESSION['foto_perfil'] = $user['foto_perfil'] ?? '';
                         $_SESSION['last_activity'] = time();
                         $_SESSION['session_token'] = bin2hex(random_bytes(32));
                         
@@ -185,9 +188,9 @@ class AuthController extends BaseController {
         }
         
         $this->render('auth/forgot-password', [
-            'message' => $message,
-            'error' => $error,
-            'page_title' => 'Recuperar Contraseña'
+            'success'    => $message,
+            'error'      => $error,
+            'page_title' => 'Recuperar Contraseña',
         ]);
     }
     
@@ -195,57 +198,52 @@ class AuthController extends BaseController {
      * Restablecer contraseña con token
      */
     public function resetPassword() {
-        $token = $_GET['token'] ?? '';
-        $message = '';
-        $error = '';
-        
+        $token      = $_GET['token'] ?? ($_POST['token'] ?? '');
+        $message    = '';
+        $error      = '';
+        $user       = null;
+
         if (empty($token)) {
-            $error = 'Token de restablecimiento inválido';
+            $error = 'Token de restablecimiento inválido.';
         } else {
-            // Verificar token
             $user = $this->usuarioModel->verifyResetToken($token);
-            
+
             if (!$user) {
-                $error = 'Token de restablecimiento inválido o expirado';
-            } else {
-                if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-                    if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-                        $error = 'Token de seguridad inválido.';
+                $error = 'El enlace ha expirado o ya fue utilizado. Solicita uno nuevo.';
+            } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+                    $error = 'Token de seguridad inválido.';
+                } else {
+                    $password        = $_POST['password']         ?? '';
+                    $confirmPassword = $_POST['password_confirm'] ?? '';
+
+                    if (empty($password) || empty($confirmPassword)) {
+                        $error = 'Por favor complete todos los campos.';
+                    } elseif ($password !== $confirmPassword) {
+                        $error = 'Las contraseñas no coinciden.';
+                    } elseif (strlen($password) < 8) {
+                        $error = 'La contraseña debe tener al menos 8 caracteres.';
                     } else {
-                        $password = $_POST['password'] ?? '';
-                        $confirmPassword = $_POST['confirm_password'] ?? '';
-                        
-                        if (empty($password) || empty($confirmPassword)) {
-                            $error = 'Por favor complete todos los campos';
-                        } elseif ($password !== $confirmPassword) {
-                            $error = 'Las contraseñas no coinciden';
-                        } elseif (strlen($password) < 6) {
-                            $error = 'La contraseña debe tener al menos 6 caracteres';
+                        $result = $this->usuarioModel->resetPassword($token, $password);
+
+                        if (isset($result['errors'])) {
+                            $error = implode(', ', $result['errors']);
                         } else {
-                            $result = $this->usuarioModel->resetPassword($token, $password);
-                            
-                            if (isset($result['errors'])) {
-                                $error = implode(', ', $result['errors']);
-                            } else {
-                                $message = 'Contraseña restablecida correctamente. Ya puedes iniciar sesión.';
-                                
-                                // Log reset exitoso
-                                $this->logActivity('password_reset_completed', $user['id']);
-                                
-                                // Redirigir al login después de 3 segundos
-                                header('refresh:3;url=index.php?page=login');
-                            }
+                            $this->logActivity('password_reset_completed', $user['id']);
+                            $this->setFlashMessage('Contraseña actualizada correctamente. Ya puedes iniciar sesión.', 'success');
+                            $this->redirect('index.php?page=login');
+                            return;
                         }
                     }
                 }
             }
         }
-        
+
         $this->render('auth/reset-password', [
-            'token' => $token,
-            'message' => $message,
-            'error' => $error,
-            'page_title' => 'Restablecer Contraseña'
+            'tokenValido' => $user !== null,
+            'tokenStr'    => $token,
+            'error'       => $error,
+            'page_title'  => 'Restablecer Contraseña',
         ]);
     }
     
@@ -282,9 +280,10 @@ class AuthController extends BaseController {
                 $_SESSION['rol'] = $user['rol']; // Mantener compatibilidad
                 $_SESSION['nombre'] = $user['nombre']; // Mantener compatibilidad
                 $_SESSION['email'] = $user['email']; // Mantener compatibilidad
+                $_SESSION['foto_perfil'] = $user['foto_perfil'] ?? '';
                 $_SESSION['last_activity'] = time();
                 $_SESSION['session_token'] = bin2hex(random_bytes(32));
-                
+
                 // Regenerar ID de sesión
                 session_regenerate_id(true);
                 

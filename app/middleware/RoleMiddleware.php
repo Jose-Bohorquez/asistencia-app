@@ -20,27 +20,37 @@ class RoleMiddleware extends Middleware {
             'asistencias_create', 'asistencias_read', 'asistencias_update', 'asistencias_delete',
             'reportes_read', 'reportes_export',
             'logs_read', 'configuracion_update',
-            'impersonation', 'backup_create', 'backup_restore'
+            'email_config', 'email_test', 'email_send',
+            'reportes_email', 'notifications_send',
+            'usuarios_create', 'usuarios_toggle',
+            'perfil_update', 'foto_perfil_update',
+            'sesiones_activate', 'sesiones_delete',
+            'asistencias_export', 'estadisticas_read',
+            'programas_export'
         ],
         'admin' => [
-            // Puede ver todo, crear, editar, pero no eliminar
             'dashboard_access',
-            'usuarios_read', 'usuarios_update',
-            'programas_create', 'programas_read', 'programas_update',
+            'usuarios_read', 'usuarios_update', 'usuarios_toggle',
+            'programas_create', 'programas_read', 'programas_update', 'programas_export',
             'cursos_create', 'cursos_read', 'cursos_update',
             'estudiantes_create', 'estudiantes_read', 'estudiantes_update',
-            'sesiones_create', 'sesiones_read', 'sesiones_update',
-            'asistencias_create', 'asistencias_read', 'asistencias_update',
-            'reportes_read', 'reportes_export'
+            'sesiones_create', 'sesiones_read', 'sesiones_update', 'sesiones_activate', 'sesiones_delete',
+            'asistencias_create', 'asistencias_read', 'asistencias_update', 'asistencias_export',
+            'reportes_read', 'reportes_export', 'reportes_email',
+            'estadisticas_read',
+            'email_send',
+            'perfil_update', 'foto_perfil_update'
         ],
         'profesor' => [
-            // Solo puede manejar sus propios cursos y sesiones
             'dashboard_access',
             'cursos_read_own', 'cursos_update_own',
             'estudiantes_read_own', 'estudiantes_update_own',
             'sesiones_create_own', 'sesiones_read_own', 'sesiones_update_own',
-            'asistencias_create_own', 'asistencias_read_own', 'asistencias_update_own',
-            'reportes_read_own', 'reportes_export_own'
+            'sesiones_activate_own', 'sesiones_delete_own',
+            'asistencias_create_own', 'asistencias_read_own', 'asistencias_update_own', 'asistencias_export',
+            'reportes_read_own', 'reportes_export_own', 'reportes_email',
+            'estadisticas_read',
+            'perfil_update', 'foto_perfil_update'
         ]
     ];
     
@@ -151,7 +161,7 @@ class RoleMiddleware extends Middleware {
     /**
      * Verificar si el usuario tiene permiso para una acción específica
      */
-    private function hasPermissionForAction($permission) {
+    public function hasPermissionForAction($permission) {
         $userRole = $_SESSION['user_rol'];
         
         // Super admin tiene acceso a todo
@@ -167,12 +177,14 @@ class RoleMiddleware extends Middleware {
             return true;
         }
         
-        // Para profesores, verificar si es un permiso "own"
+        // Para profesores, verificar si existe la variante _own del permiso
         if ($userRole === 'profesor') {
-            $ownPermission = str_replace(['_create', '_read', '_update', '_delete'], 
-                                      ['_create_own', '_read_own', '_update_own', '_delete_own'], 
-                                      $permission);
-            if (in_array($ownPermission, $rolePermissions)) {
+            $ownPermission = str_replace(
+                ['_create',     '_read',     '_update',     '_delete',     '_activate'],
+                ['_create_own', '_read_own', '_update_own', '_delete_own', '_activate_own'],
+                $permission
+            );
+            if ($ownPermission !== $permission && in_array($ownPermission, $rolePermissions)) {
                 return true;
             }
         }

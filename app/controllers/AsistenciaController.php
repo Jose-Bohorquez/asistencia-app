@@ -56,54 +56,61 @@ class AsistenciaController extends BaseController {
      * Registrar asistencia de estudiante
      */
     public function registrarAsistencia() {
-        $error = '';
-        $success = '';
-        $sesion = null;
-        
-        // Obtener ID de sesión desde URL o token
-        $sesion_id = $_GET['sesion_id'] ?? $_GET['token'] ?? null;
-        
-        if (!$sesion_id) {
-            $error = 'Sesión no válida o no especificada.';
+        $tokenRaw = trim($_GET['sesion_id'] ?? $_GET['token'] ?? '');
+
+        // PRG: mostrar confirmación después de registro exitoso
+        if (!empty($_GET['ok']) && $_GET['ok'] === '1') {
+            $sesion = $tokenRaw ? $this->getSesionInfo($tokenRaw) : null;
+            $this->render('asistencia/registro_ok', [
+                'page_title' => 'Asistencia registrada',
+                'sesion'     => $sesion,
+            ]);
+            return;
+        }
+
+        $error      = '';
+        $estadoInfo = ''; // Mensaje informativo (no bloquea la vista)
+        $sesion     = null;
+
+        if ($tokenRaw === '') {
+            $error = 'enlace_invalido';
         } else {
             try {
-                // Obtener información de la sesión
-                $sesion = $this->getSesionInfo($sesion_id);
-                
+                $sesion = $this->getSesionInfo($tokenRaw);
+
                 if (!$sesion) {
-                    $error = 'La sesión no existe o no está activa.';
-                } elseif ($sesion['estado'] !== 'activa') {
-                    $error = 'Esta sesión ya ha finalizado.';
-                } else {
-                    // Verificar si la sesión está dentro del horario permitido
-                    if (!$this->isSessionTimeValid($sesion)) {
-                        $error = 'La sesión no está disponible en este momento.';
-                    }
+                    $error = 'no_existe';
+                } elseif ($sesion['estado'] === 'finalizada') {
+                    $error = 'finalizada';
+                } elseif ($sesion['estado'] === 'cancelada') {
+                    $error = 'cancelada';
                 }
-                
+                // estado='activa' → el formulario se muestra siempre.
+                // La hora es referencial; el docente controla el ciclo con estado.
             } catch (Exception $e) {
-                $error = 'Error al obtener información de la sesión.';
+                $error = 'error_sistema';
             }
         }
-        
-        // Procesar formulario de registro
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
+
+        // Procesar formulario solo si la sesión está activa
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $sesion && $sesion['estado'] === 'activa') {
             $result = $this->procesarRegistroAsistencia($sesion);
-            
+
             if (isset($result['error'])) {
                 $error = $result['error'];
             } else {
-                $success = $result['success'];
+                $this->redirect(
+                    'index.php?page=asistencia&sesion_id=' . intval($sesion['id']) . '&ok=1'
+                );
+                return;
             }
         }
-        
-        // Renderizar vista
-        $this->render('asistencia/registrar', [
+
+        $this->render('asistencia/registro', [
             'page_title' => 'Registrar Asistencia',
-            'sesion' => $sesion,
-            'error' => $error,
-            'success' => $success,
-            'csrf_token' => $this->generateCSRFToken()
+            'sesion'     => $sesion,
+            'error'      => $error,
+            'csrf_token' => $this->generateCSRFToken(),
         ]);
     }
     
@@ -279,12 +286,12 @@ class AsistenciaController extends BaseController {
         $fechaSesion = new DateTime($sesion['fecha'] . ' ' . $sesion['hora_inicio']);
         $horaFin = $sesion['hora_fin'] ? new DateTime($sesion['fecha'] . ' ' . $sesion['hora_fin']) : null;
         
-        // Permitir registro 15 minutos antes y hasta 30 minutos después del inicio
+        // Permitir registro 1 hora antes y hasta 2 horas después del fin
         $inicioPermitido = clone $fechaSesion;
-        $inicioPermitido->modify('-15 minutes');
+        $inicioPermitido->modify('-1 hour');
         
         $finPermitido = $horaFin ? $horaFin : (clone $fechaSesion)->modify('+2 hours');
-        $finPermitido->modify('+30 minutes');
+        $finPermitido->modify('+2 hours');
         
         return $now >= $inicioPermitido && $now <= $finPermitido;
     }
@@ -293,98 +300,113 @@ class AsistenciaController extends BaseController {
      * Procesar registro de asistencia
      */
     private function procesarRegistroAsistencia($sesion) {
-        // Verificar token CSRF
+        // CSRF
         if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
-            return ['error' => 'Token de seguridad inválido'];
+            return ['error' => 'Token de seguridad inválido. Recarga la página e inténtalo de nuevo.'];
         }
-        
-        // Validar y sanitizar datos
-        $documento = $this->sanitizeInput($_POST['documento'] ?? '');
-        $nombre = $this->sanitizeInput($_POST['nombre'] ?? '');
-        $codigo = $this->sanitizeInput($_POST['codigo'] ?? '');
-        $telefono = $this->sanitizeInput($_POST['telefono'] ?? '');
-        $correo = $this->sanitizeInput($_POST['correo'] ?? '');
-        
+
+        // La fuente de verdad del ciclo de vida es el estado de la sesión,
+        // que el docente gestiona. No bloqueamos por hora; solo verificamos estado.
+        if (!$sesion || $sesion['estado'] !== 'activa') {
+            return ['error' => 'La sesión ya no está activa. Consulta con el docente.'];
+        }
+
+        // Sanitizar campos de texto
+        $documento = $this->sanitizeInput($_POST['documento']  ?? '');
+        $nombre    = $this->sanitizeInput($_POST['nombre']     ?? '');
+        $codigo    = $this->sanitizeInput($_POST['codigo']     ?? '');
+        $telefono  = $this->sanitizeInput($_POST['telefono']   ?? '');
+        $direccion = $this->sanitizeInput($_POST['direccion']  ?? '');
+        // El campo del form se llama 'correo'; lo mapeamos a 'email' (clave del modelo)
+        $email     = $this->sanitizeInput($_POST['correo']     ?? '');
+
         if (empty($documento) || empty($nombre)) {
-            return ['error' => 'Por favor, complete los campos obligatorios'];
+            return ['error' => 'Por favor, complete los campos obligatorios (documento y nombre).'];
         }
-        
+
+        // Validar firma (obligatoria)
+        $firma = $_POST['firma'] ?? '';
+        if (empty($firma)) {
+            return ['error' => 'La firma es obligatoria. Por favor, firme en el recuadro antes de enviar.'];
+        }
+        if (!str_starts_with($firma, 'data:image/png;base64,')) {
+            return ['error' => 'El formato de la firma no es válido.'];
+        }
+        $firmaLen = strlen($firma);
+        if ($firmaLen < 1000 || $firmaLen > 700000) {
+            return ['error' => 'La firma parece estar vacía o es demasiado grande. Vuelva a firmar.'];
+        }
+        $firmaHash = hash('sha256', $firma);
+
         try {
             // Buscar o crear estudiante
             $estudiante = $this->estudianteModel->findByDocumento($documento);
-            
+
             if (!$estudiante) {
-                // Crear nuevo estudiante
                 $estudianteData = [
                     'documento' => $documento,
-                    'nombre' => $nombre,
-                    'codigo' => $codigo,
-                    'telefono' => $telefono,
-                    'correo' => $correo,
-                    'activo' => 1
+                    'nombre'    => $nombre,
+                    'codigo'    => $codigo,
+                    'telefono'  => $telefono,
+                    'direccion' => $direccion,
+                    'email'     => $email,
+                    'activo'    => 1,
                 ];
-                
                 $result = $this->estudianteModel->create($estudianteData);
-                
                 if (isset($result['errors'])) {
-                    return ['error' => 'Error al registrar estudiante: ' . implode(', ', $result['errors'])];
+                    return ['error' => 'Error al registrar el estudiante. Intente nuevamente.'];
                 }
-                
                 $estudiante_id = $result;
             } else {
                 $estudiante_id = $estudiante['id'];
-                
-                // Actualizar información si es necesaria
-                if ($estudiante['nombre'] !== $nombre || $estudiante['telefono'] !== $telefono || $estudiante['correo'] !== $correo) {
-                    $updateData = [
-                        'nombre' => $nombre,
-                        'telefono' => $telefono,
-                        'correo' => $correo
-                    ];
-                    
-                    if (!empty($codigo) && $estudiante['codigo'] !== $codigo) {
-                        $updateData['codigo'] = $codigo;
-                    }
-                    
+                // Actualizar datos si cambiaron (no tocar email si el form lo dejó vacío)
+                $updateData = [];
+                if ($estudiante['nombre']    !== $nombre)    $updateData['nombre']    = $nombre;
+                if ($estudiante['telefono'] !== $telefono)  $updateData['telefono']  = $telefono;
+                if (!empty($direccion) && $estudiante['direccion'] !== $direccion) $updateData['direccion'] = $direccion;
+                if (!empty($email) && $estudiante['email'] !== $email) $updateData['email'] = $email;
+                if (!empty($codigo) && $estudiante['codigo'] !== $codigo) $updateData['codigo'] = $codigo;
+                if (!empty($updateData)) {
                     $this->estudianteModel->update($estudiante_id, $updateData);
                 }
             }
-            
-            // Verificar si ya registró asistencia
+
+            // Verificar si ya registró asistencia (unicidad por sesión + estudiante)
             if ($this->asistenciaModel->yaRegistroAsistencia($sesion['id'], $estudiante_id)) {
-                return ['error' => 'Ya has registrado tu asistencia para esta sesión'];
+                return ['error' => 'Ya has registrado tu asistencia para esta sesión.'];
             }
-            
-            // Registrar asistencia
+
+            // Registrar asistencia con firma
             $asistenciaData = [
-                'sesion_id' => $sesion['id'],
+                'sesion_id'     => $sesion['id'],
                 'estudiante_id' => $estudiante_id,
                 'hora_registro' => date('Y-m-d H:i:s'),
-                'ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
-                'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? ''
+                'ip_address'    => $_SERVER['REMOTE_ADDR'] ?? '',
+                'user_agent'    => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+                'firma'         => $firma,
+                'firma_hash'    => $firmaHash,
             ];
-            
+
             $result = $this->asistenciaModel->create($asistenciaData);
-            
             if (isset($result['errors'])) {
-                return ['error' => 'Error al registrar asistencia: ' . implode(', ', $result['errors'])];
+                return ['error' => 'Error al guardar la asistencia. Intente nuevamente.'];
             }
-            
-            // Inscribir estudiante al curso si no está inscrito
+
+            // Inscribir al curso si aún no está inscrito
             if (!$this->estudianteModel->estaInscritoEnCurso($estudiante_id, $sesion['curso_id'])) {
                 $this->estudianteModel->inscribirEnCurso($estudiante_id, $sesion['curso_id']);
             }
-            
-            // Log de actividad
+
             $this->logActivity('asistencia_registrada', $result, $estudiante_id, [
                 'sesion_id' => $sesion['id'],
-                'curso_id' => $sesion['curso_id']
+                'curso_id'  => $sesion['curso_id'],
             ]);
-            
-            return ['success' => 'Asistencia registrada correctamente. ¡Bienvenido/a ' . $nombre . '!'];
-            
+
+            return ['success' => true];
+
         } catch (Exception $e) {
-            return ['error' => 'Error al procesar el registro: ' . $e->getMessage()];
+            error_log('procesarRegistroAsistencia error: ' . $e->getMessage());
+            return ['error' => 'Error al procesar el registro. Intente nuevamente.'];
         }
     }
     
@@ -397,7 +419,7 @@ class AsistenciaController extends BaseController {
             'fecha_inicio' => $_GET['fecha_inicio'] ?? null,
             'fecha_fin' => $_GET['fecha_fin'] ?? null,
             'estudiante' => $_GET['estudiante'] ?? null,
-            'page' => intval($_GET['page'] ?? 1),
+            'page' => max(1, intval($_GET['p'] ?? 1)),
             'per_page' => 20
         ];
     }
@@ -537,7 +559,7 @@ class AsistenciaController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**

@@ -7,47 +7,58 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class Curso extends BaseModel {
     protected $table = 'cursos';
-    protected $fillable = ['nombre', 'codigo', 'descripcion', 'programa_id', 'profesor_id', 'creditos', 'semestre', 'activo'];
+    // Todos los campos editables según la tabla real de la BD
+    protected $fillable = [
+        'nombre', 'codigo', 'descripcion', 'programa_id', 'programa',
+        'profesor_id', 'creditos', 'semestre', 'grupo', 'area',
+        'aula', 'sede', 'periodo_academico', 'activo',
+    ];
     
     /**
      * Crear curso con validaciones
      */
     public function create($data) {
-        // Validar datos
+        // Solo valida campos realmente requeridos por el formulario
         $errors = $this->validate($data, [
-            'nombre' => 'required|max:100',
-            'codigo' => 'required|max:20',
+            'nombre'      => 'required|max:100',
+            'codigo'      => 'required|max:20',
             'programa_id' => 'required',
             'profesor_id' => 'required',
-            'creditos' => 'required',
-            'semestre' => 'required'
         ]);
-        
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
-        // Verificar que el código no exista
+
         if ($this->codigoExists($data['codigo'])) {
             return ['errors' => ['codigo' => 'El código del curso ya existe']];
         }
-        
-        // Verificar que el programa existe
+
         if (!$this->programaExists($data['programa_id'])) {
             return ['errors' => ['programa_id' => 'El programa seleccionado no existe']];
         }
-        
-        // Verificar que el profesor existe y tiene el rol correcto
+
         if (!$this->profesorExists($data['profesor_id'])) {
             return ['errors' => ['profesor_id' => 'El profesor seleccionado no existe o no tiene permisos']];
         }
-        
+
+        // Campo 'programa' (NOT NULL en BD): auto-poblar con el nombre del programa
+        if (!isset($data['programa']) || $data['programa'] === '') {
+            $conn = $this->getConnection();
+            $stmt = $conn->prepare("SELECT nombre FROM programas WHERE id = ? LIMIT 1");
+            $stmt->bind_param('i', $data['programa_id']);
+            $stmt->execute();
+            $prow = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $data['programa'] = $prow['nombre'] ?? '';
+        }
+
         $cursoId = parent::create($data);
-        
+
         if ($cursoId) {
             $this->logActivity('create', $cursoId, null, $data);
         }
-        
+
         return $cursoId;
     }
     
@@ -57,35 +68,43 @@ class Curso extends BaseModel {
     public function update($id, $data) {
         $oldData = $this->find($id);
         
-        // Validar datos
-        $errors = $this->validate($data, [
-            'nombre' => 'required|max:100',
-            'codigo' => 'required|max:20',
+        // Solo valida campos presentes en $data (partial-update safe)
+        $allRules = [
+            'nombre'      => 'required|max:100',
+            'codigo'      => 'required|max:20',
             'programa_id' => 'required',
             'profesor_id' => 'required',
-            'creditos' => 'required',
-            'semestre' => 'required'
-        ]);
-        
+        ];
+        $rules  = array_intersect_key($allRules, $data);
+        $errors = $this->validate($data, $rules);
+
         if (!empty($errors)) {
             return ['errors' => $errors];
         }
-        
-        // Verificar código único
-        if ($this->codigoExists($data['codigo'], $id)) {
+
+        if (isset($data['codigo']) && $this->codigoExists($data['codigo'], $id)) {
             return ['errors' => ['codigo' => 'El código del curso ya existe']];
         }
-        
-        // Verificar que el programa existe
-        if (!$this->programaExists($data['programa_id'])) {
+
+        if (isset($data['programa_id']) && !$this->programaExists($data['programa_id'])) {
             return ['errors' => ['programa_id' => 'El programa seleccionado no existe']];
         }
-        
-        // Verificar que el profesor existe
-        if (!$this->profesorExists($data['profesor_id'])) {
+
+        if (isset($data['profesor_id']) && !$this->profesorExists($data['profesor_id'])) {
             return ['errors' => ['profesor_id' => 'El profesor seleccionado no existe o no tiene permisos']];
         }
-        
+
+        // Si cambia programa_id, sincronizar campo denormalizado 'programa'
+        if (isset($data['programa_id']) && (!isset($data['programa']) || $data['programa'] === '')) {
+            $conn = $this->getConnection();
+            $stmt = $conn->prepare("SELECT nombre FROM programas WHERE id = ? LIMIT 1");
+            $stmt->bind_param('i', $data['programa_id']);
+            $stmt->execute();
+            $prow = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $data['programa'] = $prow['nombre'] ?? '';
+        }
+
         $success = parent::update($id, $data);
         
         if ($success) {
@@ -102,10 +121,9 @@ class Curso extends BaseModel {
         $conn = $this->getConnection();
         
         $sql = "
-            SELECT 
+            SELECT
                 c.*,
                 p.nombre as programa_nombre,
-                p.tipo as programa_tipo,
                 u.nombre as profesor_nombre,
                 u.email as profesor_email,
                 (SELECT COUNT(*) FROM cursos_estudiantes ce WHERE ce.curso_id = c.id) as total_estudiantes,
@@ -152,10 +170,9 @@ class Curso extends BaseModel {
         $conn = $this->getConnection();
         
         $stmt = $conn->prepare("
-            SELECT 
+            SELECT
                 c.*,
                 p.nombre as programa_nombre,
-                p.tipo as programa_tipo,
                 p.codigo as programa_codigo,
                 u.nombre as profesor_nombre,
                 u.email as profesor_email,
@@ -470,8 +487,42 @@ class Curso extends BaseModel {
         while ($row = $result->fetch_assoc()) {
             $cursos[] = $row;
         }
-        
+
         $stmt->close();
         return $cursos;
+    }
+
+    public function countByProfesor($profesorId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos WHERE profesor_id = ? AND activo = 1");
+        $stmt->bind_param("i", $profesorId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
+    }
+
+    public function getAll($conditions = []) {
+        return $this->all($conditions, 'nombre');
+    }
+
+    /** Exportar todos los cursos con relaciones */
+    public function exportar() {
+        return $this->getAllWithRelations();
+    }
+
+    /** Exportar cursos de un profesor específico */
+    public function exportarByProfesor($profesorId) {
+        return $this->getAllWithRelations($profesorId);
+    }
+
+    public function countByPrograma($programaId) {
+        $conn = $this->getConnection();
+        $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos WHERE programa_id = ? AND activo = 1");
+        $stmt->bind_param('i', $programaId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return (int)($row['total'] ?? 0);
     }
 }

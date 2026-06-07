@@ -37,25 +37,29 @@ class Router {
         // Rutas públicas
         $this->addRoute('login', 'AuthController', 'login', ['auth' => false, 'csrf' => true]);
         $this->addRoute('asistencia', 'AsistenciaController', 'handleRequest', ['auth' => false]);
+        $this->addRoute('activacion',      'ActivacionController', 'handleRequest', ['auth' => false]);
+        $this->addRoute('forgot-password', 'AuthController',       'forgotPassword', ['auth' => false]);
+        $this->addRoute('reset-password',  'AuthController',       'resetPassword',  ['auth' => false]);
         
         // Rutas autenticadas
         $this->addRoute('logout', 'AuthController', 'logout', ['csrf' => true]);
         $this->addRoute('dashboard', 'AdminController', 'dashboard');
-        $this->addRoute('cursos', 'AdminController', 'cursos', ['permissions' => ['cursos_view']]);
-        
+        // Usamos permisos que sí existen en RoleMiddleware para que admin/profesor pasen
+        $this->addRoute('cursos', 'AdminController', 'cursos', ['permissions' => ['cursos_read']]);
+
         // Rutas con permisos específicos
         $this->addRoute('sesiones', 'SesionesController', 'handleRequest', [
-            'permissions' => ['sesiones_view']
+            'permissions' => ['sesiones_read']
         ]);
-        
+
         $this->addRoute('usuarios', 'UsuariosController', 'handleRequest', [
-            'permissions' => ['usuarios_view'],
-            'roles' => ['super_admin', 'admin']
+            'permissions' => ['usuarios_read'],
+            'roles'       => ['super_admin', 'admin']
         ]);
-        
+
         $this->addRoute('programas', 'ProgramasController', 'handleRequest', [
-            'permissions' => ['programas_view'],
-            'roles' => ['super_admin', 'admin']
+            'permissions' => ['programas_read'],
+            'roles'       => ['super_admin', 'admin']
         ]);
         
         // Rutas de exportación con rate limiting
@@ -69,6 +73,13 @@ class Router {
             'csrf' => true,
             'rate_limit' => ['max' => 50, 'window' => 3600] // 50 emails por hora
         ]);
+
+        $this->addRoute('perfil', 'ProfileController', 'handleRequest', [
+            'permissions' => ['perfil_update'],
+        ]);
+
+        // Servir fotos de perfil (requiere autenticación, sin permiso específico)
+        $this->addRoute('avatar', 'ProfileController', 'serveFoto');
     }
     
     /**
@@ -202,15 +213,17 @@ class Router {
      */
     private function hasPermissions($permissions) {
         if (!$this->middlewareManager) {
-            return true; // Fallback si no hay middleware manager
+            // Sin middleware manager no hay forma de validar permisos: denegar acceso
+            error_log('Router: middlewareManager no disponible, denegando acceso a ruta protegida.');
+            return false;
         }
-        
+
         foreach ($permissions as $permission) {
             if (!$this->middlewareManager->checkPermission($permission)) {
                 return false;
             }
         }
-        
+
         return true;
     }
     
@@ -368,4 +381,3 @@ class Router {
         return $_SESSION['csrf_token'];
     }
 }
-?>

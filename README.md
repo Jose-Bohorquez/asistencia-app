@@ -1,189 +1,352 @@
+# Sistema de Gestión de Asistencia
 
-# Project Title
-
-este proyecto nace de la idea de mitigar el gasto de papel, considrando a demas el tema de la asistencia en una entidad educativa, ademas mejorando y optimizando el proceso de registro de asistencia y claro apoyando a la vision de la sostenibilidad en cuanto a la reduccion del uso de papel 
-
-# 📊 Sistema de Gestión de Asistencia
-
-<div align="center">
-
-![Logo del Sistema](https://github.com/Jose-Bohorquez/asistencia-app/blob/main/public/assets/img/logo.png)
-
-*Sistema web para el registro y control de asistencia de estudiantes*
-
-</div>
-
-## 📋 Descripción
-
-Sistema web diseñado específicamente para instituciones educativas que permite a profesores y administradores gestionar cursos, sesiones y registrar la asistencia de estudiantes con firma digital.
+Sistema web para el registro y control de asistencia de estudiantes mediante firma digital, diseñado para instituciones educativas. Elimina el uso de papel y optimiza el proceso de registro.
 
 ---
 
-## ✨ Características Actuales
+## Tabla de contenido
 
-### 👥 Gestión de Usuarios
-- **Roles de usuario**: Administrador y Profesor
-- **Autenticación**: Sistema de login seguro con contraseñas encriptadas
-- **Control de acceso**: Funcionalidades específicas según el rol del usuario
-
-### 📚 Gestión de Cursos
-- **Creación y edición**: Información detallada de cada curso
-- **Campos disponibles**: Código, nombre, programa, área, semestre, grupo, aula y sede
-- **Listado de cursos**: Visualización de todos los cursos registrados
-
-### 🗓️ Gestión de Sesiones
-- **Programación**: Creación de sesiones con fecha y hora
-- **Estados**: Activa, finalizada o cancelada
-- **Control**: Activación/desactivación según necesidad
-
-### ✍️ Registro de Asistencia
-- **Formulario**: Captura de datos completos del estudiante
-- **Firma digital**: Registro con firma del estudiante
-- **Validación**: Prevención de registros duplicados
-
-### 📊 Exportación de Datos
-- **Formatos**: Visualización en pantalla, PDF y Excel
-- **Plantillas**: Formato institucional oficial
-- **Impresión**: Directamente desde el navegador
-
-### 📈 Dashboard
-- **Estadísticas**: Total de cursos, sesiones y estudiantes
-- **Sesiones activas**: Visualización rápida
-- **Accesos rápidos**: Enlaces a funcionalidades principales
+- [Requisitos previos](#requisitos-previos)
+- [Opción A — Docker (recomendado)](#opción-a--docker-recomendado)
+- [Opción B — XAMPP local](#opción-b--xampp-local)
+- [Credenciales por defecto](#credenciales-por-defecto)
+- [Configurar correo electrónico](#configurar-correo-electrónico)
+- [Estructura del proyecto](#estructura-del-proyecto)
+- [Documentación técnica](#documentación-técnica)
+- [Solución de problemas comunes](#solución-de-problemas-comunes)
 
 ---
 
-### 🛠️ Características Técnicas
+## Requisitos previos
 
-- **Arquitectura MVC**: Separación de lógica de negocio, datos y presentación
-- **Responsive Design**: Interfaz adaptable usando Tailwind CSS
-- **Base de datos**: MySQL para almacenamiento de datos
-- **Seguridad**: Protección contra inyección SQL y XSS
-- **Dockerización**: Configuración para despliegue con Docker
+### Para Docker
+| Herramienta | Versión mínima |
+|-------------|---------------|
+| Docker Desktop | 4.x |
+| Docker Compose | v2 (incluido en Docker Desktop) |
+| Git | cualquier versión |
 
----
-
-## 💻 Requisitos del Sistema
-
-- PHP 8.0 o superior
-- MySQL 5.7 o superior
-- Servidor web (Apache/Nginx)
-- Navegador web moderno
-
----
-
-## 🚀 Instalación
-
-### 📦 Instalación Local (XAMPP)
-
-1. **Clonar el repositorio** en la carpeta `htdocs` de XAMPP:
-   ```bash
-   git clone https://github.com/tu-usuario/asistencia-app.git
-   cd asistencia-app
-   ```
-
-2. **Configurar la base de datos**:
-   - Iniciar MySQL y Apache en XAMPP
-   - Abrir phpMyAdmin en [http://localhost/phpmyadmin](http://localhost/phpmyadmin)
-   - Crear una nueva base de datos llamada `asistencia_db`
-   - Importar el archivo `database.sql` ubicado en la carpeta `database`
-
-3. **Configurar la conexión a la base de datos**:
-   - Abrir el archivo `config/database.php`
-   - Modificar las constantes de conexión según tu entorno local
-
-4. **Configurar permisos de carpetas**:
-   - Asegurarse que la carpeta `uploads` y sus subcarpetas tengan permisos de escritura
-
-5. **Acceder a la aplicación**:
-   - Navegador: [http://localhost/asistencia-app](http://localhost/asistencia-app)
-   - Credenciales por defecto: `admin / admin123`
-
-### 🐳 Instalación con Docker
-
-1. Clonar el repositorio:
-   ```bash
-   git clone https://github.com/tu-usuario/asistencia-app.git
-   cd asistencia-app
-   ```
-
-2. Construir la imagen de Docker:
-   ```bash
-   docker build -t asistencia-app .
-   ```
-
-3. La aplicación estará disponible en:
-   - Aplicación web: [http://localhost:8080](http://localhost:8080)
-   - phpMyAdmin: [http://localhost:8081](http://localhost:8081)
+### Para XAMPP
+| Herramienta | Versión mínima |
+|-------------|---------------|
+| XAMPP | 8.2+ (PHP 8.2 + Apache + MySQL) |
+| Composer | 2.x |
+| Git | cualquier versión |
 
 ---
 
-## 🧭 Primer Uso
+## Opción A — Docker (recomendado)
 
-1. Iniciar sesión con las credenciales por defecto
-2. Cambiar contraseña desde Perfil > Cambiar contraseña
-3. Configuración inicial desde Configuración > General
-4. Crear cursos y sesiones
-5. Registrar asistencia y compartir enlace a estudiantes
-6. Exportar reportes en formato deseado
+> No necesita instalar PHP, MySQL ni Apache en tu máquina.
+
+### Paso 1 — Clonar el repositorio
+
+```bash
+git clone https://github.com/Jose-Bohorquez/asistencia-app.git
+cd asistencia-app
+```
+
+### Paso 2 — Levantar los servicios
+
+```bash
+docker compose up -d
+```
+
+Esto levanta tres contenedores:
+
+| Servicio | URL | Descripción |
+|----------|-----|-------------|
+| **App** | http://localhost:8080 | Aplicación principal |
+| **phpMyAdmin** | http://localhost:8081 | Gestión visual de la BD |
+| **MySQL** | localhost:3306 | Base de datos (acceso interno) |
+
+> La primera vez tarda ~2 minutos porque descarga las imágenes e importa la base de datos automáticamente.
+
+### Paso 3 — Verificar que todo esté corriendo
+
+```bash
+docker compose ps
+```
+
+Deberías ver los tres servicios con estado `running` o `healthy`.
+
+### Paso 4 — Abrir la aplicación
+
+Abre tu navegador en **http://localhost:8080**
+
+Ingresa con las [credenciales por defecto](#credenciales-por-defecto).
+
+### Comandos útiles de Docker
+
+```bash
+# Ver logs en tiempo real
+docker compose logs -f
+
+# Ver logs solo de la app
+docker compose logs -f app
+
+# Detener los contenedores (conserva los datos)
+docker compose stop
+
+# Detener y eliminar contenedores (conserva el volumen mysql_data)
+docker compose down
+
+# Eliminar TODO incluyendo la base de datos
+docker compose down -v
+
+# Reconstruir la imagen (después de cambios en Dockerfile)
+docker compose up -d --build
+```
+
+### Credenciales de la base de datos (Docker)
+
+| Parámetro | Valor |
+|-----------|-------|
+| Host | `db` (interno) / `localhost:3306` (externo) |
+| Base de datos | `asistencia_db` |
+| Usuario | `developer` |
+| Contraseña | `developer` |
+| Root password | `root_secret` |
 
 ---
 
-## 📁 Estructura del Proyecto
+## Opción B — XAMPP local
 
-- `app/`: Lógica de la aplicación
-- `config/`: Configuración
-- `controllers/`: Controladores
-- `database/`: Archivos SQL
-- `models/`: Modelos
-- `public/`: Archivos públicos (CSS, JS, imágenes)
-- `views/`: Vistas
+### Paso 1 — Clonar el repositorio
+
+Clona el repositorio dentro del directorio `htdocs` de XAMPP:
+
+```bash
+# Windows
+cd C:\xampp\htdocs
+git clone https://github.com/Jose-Bohorquez/asistencia-app.git
+
+# macOS
+cd /Applications/XAMPP/htdocs
+git clone https://github.com/Jose-Bohorquez/asistencia-app.git
+
+# Linux
+cd /opt/lampp/htdocs
+git clone https://github.com/Jose-Bohorquez/asistencia-app.git
+```
+
+### Paso 2 — Instalar dependencias PHP
+
+```bash
+cd asistencia-app
+composer install
+```
+
+### Paso 3 — Crear la base de datos
+
+1. Inicia **Apache** y **MySQL** desde el panel de XAMPP.
+2. Abre **phpMyAdmin** en http://localhost/phpmyadmin
+3. Crea una nueva base de datos llamada `asistencia_db` con cotejamiento `utf8mb4_unicode_ci`.
+4. Selecciona la base de datos `asistencia_db`.
+5. Ve a **Importar** → selecciona el archivo `asistencia_db.sql` → clic en **Continuar**.
+
+### Paso 4 — Configurar credenciales locales
+
+Copia la plantilla de configuración:
+
+```bash
+cp config/env.example.php config/env.local.php
+```
+
+Edita `config/env.local.php` con tus datos:
+
+```php
+return [
+    'DB_HOST' => 'localhost',
+    'DB_NAME' => 'asistencia_db',
+    'DB_USER' => 'root',      // usuario de tu MySQL local
+    'DB_PASS' => '',          // contraseña de tu MySQL local (XAMPP = vacía por defecto)
+];
+```
+
+> `config/env.local.php` está en `.gitignore` y **nunca se sube al repositorio**.
+
+### Paso 5 — Abrir la aplicación
+
+Abre tu navegador en:
+
+```
+http://localhost/asistencia-app/public/
+```
 
 ---
 
-## 🧩 Futuras Implementaciones
+## Credenciales por defecto
 
-- Notificaciones por correo electrónico
-- App móvil para estudiantes
-- Integración con sistemas académicos
-- Reconocimiento facial
-- Justificación de inasistencias
-- Reportes estadísticos avanzados
-- API REST
+> Cambia la contraseña del administrador inmediatamente después del primer acceso.
 
----
+| Campo | Valor |
+|-------|-------|
+| Usuario | `admin` |
+| Contraseña | `admin123` |
+| Rol | Administrador |
 
-## 🛠️ Solución de Problemas
+También están cargados en el SQL de ejemplo:
 
-### 1. Error de conexión a la base de datos
-- Verificar servicio MySQL
-- Revisar credenciales en `config/database.php`
-- Confirmar existencia de la base de datos
-
-### 2. Problemas de permisos en `uploads`
-- Dar permisos de escritura
-
-### 3. Página en blanco
-- Revisar logs en `xampp/php/logs`
-- Verificar `mod_rewrite` esté activo
+| Usuario | Contraseña | Rol |
+|---------|-----------|-----|
+| `admin` | `admin123` | Administrador |
+| `superadmin` | `admin123` | Super Administrador |
+| `profesor1` | `admin123` | Profesor |
 
 ---
 
-## 🤝 Contribución
+## Configurar correo electrónico
 
-1. Haz un fork del repositorio
-2. Crea una rama para tu funcionalidad
-3. Realiza tus cambios y haz commit
-4. Envía un pull request
+El sistema puede enviar reportes de asistencia por correo. Para configurarlo:
+
+1. Inicia sesión como administrador.
+2. Ve a **Correo** → **Configuración SMTP**.
+3. Completa los datos de tu proveedor:
+
+### Gmail (recomendado)
+
+| Campo | Valor |
+|-------|-------|
+| Host SMTP | `smtp.gmail.com` |
+| Puerto | `587` |
+| Encriptación | `TLS` |
+| Usuario | tu-correo@gmail.com |
+| Contraseña | Contraseña de aplicación de Google* |
+
+> *Requiere activar verificación en 2 pasos y generar una **contraseña de aplicación** en https://myaccount.google.com/apppasswords
+
+### Hostinger / cPanel
+
+| Campo | Valor |
+|-------|-------|
+| Host SMTP | `mail.tudominio.com` |
+| Puerto | `465` |
+| Encriptación | `SSL` |
+| Usuario | correo@tudominio.com |
+| Contraseña | contraseña del buzón |
 
 ---
 
-## 📜 Licencia
+## Estructura del proyecto
 
-Este proyecto está licenciado bajo la Licencia MIT.
+```
+asistencia-app/
+├── app/
+│   ├── controllers/        # Lógica de negocio (MVC)
+│   ├── core/               # Router y sistema de rutas
+│   ├── middleware/         # Autenticación, roles y CSRF
+│   ├── models/             # Acceso a datos (BaseModel + modelos)
+│   ├── utils/              # ExportHelper (Excel, PDF, CSV)
+│   └── views/              # Plantillas HTML con Tailwind CSS
+│       ├── admin/          # Vistas del panel administrativo
+│       ├── asistencia/     # Formulario público de registro
+│       ├── auth/           # Login y recuperación de contraseña
+│       ├── components/     # Componentes reutilizables
+│       └── layouts/        # Header, navbar, footer, base
+├── config/
+│   ├── config.php          # Constantes globales de la app
+│   ├── database.php        # Conexión adaptativa (Docker/XAMPP/Hostinger)
+│   ├── email.php           # Configuración de proveedores SMTP
+│   ├── env.example.php     # Plantilla de credenciales (versionar)
+│   └── env.local.php       # Credenciales reales (NO versionar, en .gitignore)
+├── docs/
+│   ├── casos-de-uso.md     # 11 casos de uso documentados
+│   ├── requisitos.md       # Requisitos funcionales y no funcionales
+│   ├── diagrama-bd.md      # ERD en Mermaid + índices + relaciones
+│   └── diccionario-datos.md# Descripción de cada tabla y columna
+├── docker/
+│   └── init.sql            # SQL de inicialización (backup)
+├── public/
+│   ├── index.php           # Único punto de entrada (front controller)
+│   ├── .htaccess           # Rewrite rules para URLs limpias
+│   └── assets/
+│       └── img/            # Imágenes estáticas (logo, etc.)
+├── vendor/                 # Dependencias de Composer (PHPMailer)
+├── asistencia_db.sql       # Esquema completo de la base de datos
+├── migration.sql           # Scripts de migración incremental
+├── composer.json           # Dependencias PHP
+├── Dockerfile              # Imagen Docker de la app
+└── docker-compose.yml      # Orquestación de servicios
+```
 
 ---
 
-## 📬 Contacto
-- Email: Bd567358546@gmail.com
-- GitHub: [https://github.com/Jose-Bohorquez] (https://github.com/Jose-Bohorquez/asistencia-app)
+## Documentación técnica
+
+| Documento | Descripción |
+|-----------|-------------|
+| [docs/roles-usuarios.md](docs/roles-usuarios.md) | Roles, usuarios de prueba, permisos, acceso de estudiantes |
+| [docs/arquitectura.md](docs/arquitectura.md) | Capas MVC, mapa de archivos, tecnologías |
+| [docs/flujos.md](docs/flujos.md) | Flujos detallados por petición (login, sesión, asistencia, exportar...) |
+| [docs/casos-de-uso.md](docs/casos-de-uso.md) | 11 casos de uso con flujos principales y alternativos |
+| [docs/requisitos.md](docs/requisitos.md) | Requisitos funcionales y no funcionales |
+| [docs/diagrama-bd.md](docs/diagrama-bd.md) | ERD renderizable en Mermaid |
+| [docs/diccionario-datos.md](docs/diccionario-datos.md) | Tablas, columnas, tipos y restricciones |
+
+---
+
+## Solución de problemas comunes
+
+### Docker: el contenedor de la app no conecta con la BD
+
+```bash
+# Ver qué está pasando
+docker compose logs db
+docker compose logs app
+
+# Esperar a que MySQL esté healthy y reiniciar la app
+docker compose restart app
+```
+
+### Docker: puerto 8080 ocupado
+
+Edita `docker-compose.yml` y cambia el puerto de la app:
+```yaml
+ports:
+  - "9090:80"   # cambia 8080 por cualquier puerto libre
+```
+
+### XAMPP: página en blanco o error 500
+
+1. Activa `display_errors` temporalmente en `php.ini` para ver el error.
+2. Verifica que `mod_rewrite` esté habilitado en Apache.
+3. Revisa que `config/env.local.php` exista y tenga las credenciales correctas.
+
+### XAMPP: error "mod_rewrite not enabled"
+
+En XAMPP Windows, edita `C:\xampp\apache\conf\httpd.conf` y descomenta:
+```
+LoadModule rewrite_module modules/mod_rewrite.so
+```
+
+### Error al importar el SQL: "Unknown character set utf8mb4"
+
+Tu MySQL es muy antiguo. Usa MySQL 5.7+ o reemplaza `utf8mb4` por `utf8` en `asistencia_db.sql`.
+
+### Firma digital no aparece en móvil
+
+El canvas de firma requiere HTTPS en algunos navegadores móviles modernos. En desarrollo local esto es normal; en producción configura un certificado SSL.
+
+---
+
+## Stack tecnológico
+
+| Capa | Tecnología |
+|------|-----------|
+| Backend | PHP 8.2, patrón MVC sin framework |
+| Base de datos | MySQL 8.0 + MySQLi con Prepared Statements |
+| Frontend | Tailwind CSS 3 (CDN), JavaScript vanilla |
+| Firma digital | Signature Pad 4.0 |
+| Alertas UI | SweetAlert2 11 |
+| Iconos | Font Awesome 6 |
+| Email | PHPMailer 6.10 (SMTP) |
+| Contenedores | Docker + Docker Compose |
+
+---
+
+## Contacto
+
+- **Autor:** Jose Bohorquez
+- **Email:** jose.bohorquez@servitel.co
+- **GitHub:** [github.com/Jose-Bohorquez](https://github.com/Jose-Bohorquez/asistencia-app)

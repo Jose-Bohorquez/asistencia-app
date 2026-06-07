@@ -15,8 +15,8 @@ $showFooter = false;
 ob_start();
 ?>
 
-<div class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md w-full space-y-8">
+<div class="min-h-screen flex items-center justify-center py-8 px-4">
+    <div class="w-full max-w-sm sm:max-w-md space-y-6">
         <!-- Logo y título -->
         <div class="text-center">
             <div class="mx-auto h-24 w-24 mb-6">
@@ -100,9 +100,9 @@ ob_start();
         <!-- Información adicional -->
         <div class="text-center">
             <p class="text-sm text-gray-600">
-                ¿Problemas para acceder? 
-                <a href="#" class="font-medium text-blue-600 hover:text-blue-500 transition duration-200">
-                    Contactar soporte
+                ¿Olvidaste tu contraseña?
+                <a href="index.php?page=forgot-password" class="font-medium text-blue-600 hover:text-blue-500 transition duration-200">
+                    Recupérala aquí
                 </a>
             </p>
         </div>
@@ -114,79 +114,23 @@ $content = ob_get_clean();
 
 // CSS personalizado para el login
 $customCSS[] = '
-/* Animaciones adicionales */
 @keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
 }
-
-.max-w-md {
-    animation: fadeInUp 0.6s ease-out;
-}
-
-/* Efectos hover mejorados */
-input:focus {
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-button:hover {
-    box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
-}
-
-/* Responsividad mejorada */
-@media (max-width: 640px) {
-    .max-w-md {
-        margin: 1rem;
-    }
-    
-    .px-8 {
-        padding-left: 1.5rem !important;
-        padding-right: 1.5rem !important;
-    }
-    
-    .py-8 {
-        padding-top: 1.5rem !important;
-        padding-bottom: 1.5rem !important;
-    }
-    
-    .text-3xl {
-        font-size: 1.875rem !important;
-    }
-    
-    .h-24, .w-24 {
-        height: 5rem !important;
-        width: 5rem !important;
-    }
-}
+.max-w-md { animation: fadeInUp 0.5s ease-out; }
 ';
 
 // JavaScript personalizado para mostrar errores con SweetAlert2
-$customJS[] = '
-<script>
-// Mostrar error con SweetAlert2 si existe
-<?php if (!empty($error)): ?>
-Swal.fire({
-    icon: "error",
-    title: "Error de autenticación",
-    text: "<?= addslashes($error) ?>",
-    confirmButtonText: "Intentar de nuevo",
-    confirmButtonColor: "#dc2626",
-    showClass: {
-        popup: "animate__animated animate__fadeInDown"
-    },
-    hideClass: {
-        popup: "animate__animated animate__fadeOutUp"
-    }
-});
-<?php endif; ?>
-</script>
-';
+$customJS[] = !empty($error)
+    ? 'Swal.fire({
+        icon: "error",
+        title: "Error de acceso",
+        text: ' . json_encode((string)$error, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) . ',
+        confirmButtonText: "Intentar de nuevo",
+        confirmButtonColor: "#dc2626"
+    });'
+    : '';
 
 // Incluir el layout base
 require_once '../app/views/layouts/base.php';

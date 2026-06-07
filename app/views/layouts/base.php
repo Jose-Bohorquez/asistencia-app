@@ -21,16 +21,14 @@
     
     <!-- Custom Styles -->
     <style>
-        /* Responsive Design */
-        @media (max-width: 640px) {
-            table, th, td {
-                font-size: 12px !important;
-                padding: 2px !important;
-            }
-            .p-6 { padding: 1rem !important; }
-            .p-4 { padding: 0.5rem !important; }
-        }
-        
+        /* Prevenir scroll horizontal accidental */
+        html, body { overflow-x: hidden; max-width: 100%; }
+
+        /* Mínimo touch target 44px para accesibilidad táctil */
+        button, [role="button"], a.btn, .touch-target { min-height: 44px; }
+        /* Excepción: acciones de tabla en desktop (espacio limitado) */
+        .table-action { min-height: 32px; }
+
         /* Navbar Animations */
         .navbar-dropdown {
             opacity: 0;
@@ -115,8 +113,11 @@
     </style>
     
     <!-- Page Specific Styles -->
-    <?php if (isset($additionalCSS)): ?>
+    <?php if (!empty($additionalCSS)): ?>
         <?= $additionalCSS ?>
+    <?php endif; ?>
+    <?php if (!empty($customCSS)): ?>
+        <style><?= is_array($customCSS) ? implode("\n", $customCSS) : $customCSS ?></style>
     <?php endif; ?>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -126,7 +127,7 @@
     <?php endif; ?>
     
     <!-- Main Content -->
-    <main class="<?= isset($_SESSION['user_id']) ? 'container mx-auto px-2 sm:px-4 py-4 sm:py-8' : '' ?>">
+    <main class="<?= isset($_SESSION['user_id']) ? 'w-full max-w-7xl mx-auto px-3 sm:px-5 lg:px-8 py-4 sm:py-6' : '' ?>">
         <?php if (isset($content)): ?>
             <?= $content ?>
         <?php endif; ?>
@@ -236,8 +237,16 @@
     </script>
     
     <!-- Page Specific JavaScript -->
-    <?php if (isset($additionalJS)): ?>
+    <?php if (!empty($additionalJS)): ?>
         <?= $additionalJS ?>
+    <?php endif; ?>
+    <?php if (!empty($customJS)): ?>
+        <script><?= is_array($customJS) ? implode("\n", $customJS) : $customJS ?></script>
+    <?php endif; ?>
+
+    <!-- Floating Action Button -->
+    <?php if (!empty($floatingButton)): ?>
+        <?= $floatingButton ?>
     <?php endif; ?>
 </body>
 </html>

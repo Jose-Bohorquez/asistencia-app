@@ -87,14 +87,18 @@ class ExportController extends BaseController {
         
         // Verificar permisos específicos del curso si es profesor
         if ($this->currentUser['rol'] === 'profesor') {
-            $sesion = $this->db->query(
-                "SELECT s.*, c.profesor_id FROM sesiones s 
-                 JOIN cursos c ON s.curso_id = c.id 
-                 WHERE s.id = ?",
-                [$sesionId]
-            )->fetch();
-            
-            if (!$sesion || $sesion['profesor_id'] != $this->currentUser['id']) {
+            $stmt = $this->db->prepare(
+                "SELECT s.id, c.profesor_id FROM sesiones s
+                 INNER JOIN cursos c ON s.curso_id = c.id
+                 WHERE s.id = ? AND c.profesor_id = ?
+                 LIMIT 1"
+            );
+            $stmt->bind_param('ii', $sesionId, $this->currentUser['id']);
+            $stmt->execute();
+            $sesionOk = $stmt->get_result()->num_rows > 0;
+            $stmt->close();
+
+            if (!$sesionOk) {
                 $this->jsonResponse(['error' => 'No tienes permisos para exportar esta sesión'], 403);
                 return;
             }
@@ -297,4 +301,3 @@ class ExportController extends BaseController {
         return $this->middlewareManager->checkPermission($permission);
     }
 }
-?>

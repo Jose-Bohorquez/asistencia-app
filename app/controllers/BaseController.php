@@ -61,17 +61,18 @@ abstract class BaseController {
     }
     
     /**
-     * Validar token CSRF
+     * Validar token CSRF — solo acepta el token desde POST o cabecera HTTP
      */
     protected function validateCSRF($token = null) {
         if (!$token) {
-            $token = $_POST['csrf_token'] ?? $_GET['csrf_token'] ?? null;
+            // Solo leer de POST o cabecera X-CSRF-Token; NUNCA desde GET
+            $token = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
         }
-        
+
         if (!$token || !isset($_SESSION['csrf_token'])) {
             return false;
         }
-        
+
         return hash_equals($_SESSION['csrf_token'], $token);
     }
     
@@ -123,14 +124,10 @@ abstract class BaseController {
         if (!$this->currentUser) {
             return false;
         }
-        
-        // Super admin tiene todos los permisos
         if ($this->currentUser['rol'] === 'super_admin') {
             return true;
         }
-        
-        $userPermissions = $this->currentUser['permisos'] ?? [];
-        return in_array($permission, $userPermissions);
+        return $this->middlewareManager->checkPermission($permission);
     }
     
     /**
@@ -179,28 +176,20 @@ abstract class BaseController {
     }
     
     /**
-     * Renderizar vista
+     * Renderizar vista.
+     * Las vistas admin usan base.php como layout completo (ob_start → $content → include base.php).
+     * No se incluye header.php/footer.php por separado para evitar duplicar el navbar.
      */
     protected function render($view, $data = []) {
-        // Combinar datos de la vista con datos comunes
         $viewData = array_merge($this->viewData, $data);
-        
-        // Extraer variables para la vista
         extract($viewData);
-        
-        // Incluir header
-        include __DIR__ . '/../views/layouts/header.php';
-        
-        // Incluir vista específica
+
         $viewFile = __DIR__ . "/../views/{$view}.php";
         if (file_exists($viewFile)) {
             include $viewFile;
         } else {
             throw new Exception("Vista no encontrada: {$view}");
         }
-        
-        // Incluir footer
-        include __DIR__ . '/../views/layouts/footer.php';
     }
     
     /**

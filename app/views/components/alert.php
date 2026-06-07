@@ -230,6 +230,7 @@ function renderToast($options = []) {
 /**
  * Badge/Etiqueta
  */
+if (!function_exists('renderBadge')):
 function renderBadge($options = []) {
     $defaults = [
         'text' => '',
@@ -262,6 +263,7 @@ function renderBadge($options = []) {
     
     return '<span class="inline-flex items-center font-medium ' . $typeClass . ' ' . $sizeClass . ' ' . $roundedClass . ' ' . $options['extraClasses'] . '">' . htmlspecialchars($options['text']) . '</span>';
 }
+endif;
 
 /**
  * Progress Bar

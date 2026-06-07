@@ -1,4 +1,3 @@
-
 <?php
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/Sesion.php';
@@ -45,11 +44,47 @@ class SesionesController extends BaseController {
             case 'export':
                 $this->export();
                 break;
+            case 'imprimir':
+                $this->imprimir();
+                break;
+            case 'detalle':
+                $this->detalle();
+                break;
+            case 'asistencia_json':
+                $this->asistenciaJson();
+                break;
             default:
                 $this->index();
         }
     }
     
+    /**
+     * Verifica que el usuario actual puede operar sobre una sesión específica.
+     * Admins y super_admins acceden a cualquier sesión.
+     * Profesores solo pueden acceder a sus propias sesiones (via cursos.profesor_id).
+     */
+    private function canAccessSession(int $sesionId): bool {
+        if (in_array($this->currentUser['rol'], ['super_admin', 'admin'])) {
+            return true;
+        }
+        if ($this->currentUser['rol'] !== 'profesor') {
+            return false;
+        }
+        $conn = $this->db;
+        $stmt = $conn->prepare(
+            "SELECT s.id FROM sesiones s
+             INNER JOIN cursos c ON s.curso_id = c.id
+             WHERE s.id = ? AND c.profesor_id = ?
+             LIMIT 1"
+        );
+        $stmt->bind_param('ii', $sesionId, $this->currentUser['id']);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $ok = $result->num_rows > 0;
+        $stmt->close();
+        return $ok;
+    }
+
     /**
      * Listar sesiones
      */
@@ -62,7 +97,8 @@ class SesionesController extends BaseController {
         
         try {
             // Obtener parámetros de filtrado y paginación
-            $page = intval($_GET['page'] ?? 1);
+            // Nota: $_GET['page'] es la ruta; el número de página va en 'p'
+            $page = max(1, intval($_GET['p'] ?? 1));
             $search = $this->sanitizeInput($_GET['search'] ?? '');
             $curso_id = intval($_GET['curso_id'] ?? 0);
             $estado = $this->sanitizeInput($_GET['estado'] ?? '');
@@ -129,16 +165,22 @@ class SesionesController extends BaseController {
         }
         
         $result = $this->processSessionForm();
-        
+
         if (isset($result['errors'])) {
-            $this->jsonResponse(['errors' => $result['errors']], 400);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['errors' => $result['errors']], 400);
+            } else {
+                $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
         } else {
-            $this->logActivity('sesion_created', $result['id'], null, $result['data']);
-            $this->jsonResponse([
-                'success' => true,
-                'message' => 'Sesión creada correctamente',
-                'sesion_id' => $result['id']
-            ]);
+            $this->logActivity('sesion_created', 'sesiones', $result['id'] ?? null, $result['data'] ?? []);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['success' => true, 'message' => 'Sesión creada correctamente', 'sesion_id' => $result['id']]);
+            } else {
+                $this->setFlashMessage('Sesión creada correctamente', 'success');
+                $this->redirect('index.php?page=sesiones');
+            }
         }
     }
     
@@ -181,15 +223,22 @@ class SesionesController extends BaseController {
         }
         
         $result = $this->processSessionForm($id);
-        
+
         if (isset($result['errors'])) {
-            $this->jsonResponse(['errors' => $result['errors']], 400);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['errors' => $result['errors']], 400);
+            } else {
+                $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
         } else {
-            $this->logActivity('sesion_updated', $id, null, $result['data']);
-            $this->jsonResponse([
-                'success' => true,
-                'message' => 'Sesión actualizada correctamente'
-            ]);
+            $this->logActivity('sesion_updated', 'sesiones', $id, $result['data'] ?? []);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['success' => true, 'message' => 'Sesión actualizada correctamente']);
+            } else {
+                $this->setFlashMessage('Sesión actualizada correctamente', 'success');
+                $this->redirect('index.php?page=sesiones');
+            }
         }
     }
     
@@ -197,52 +246,115 @@ class SesionesController extends BaseController {
      * Eliminar sesión
      */
     public function delete() {
-        // Verificar permisos - solo super_admin y admin pueden eliminar sesiones
         if (!$this->hasPermission('sesiones_delete')) {
             $this->jsonResponse(['error' => 'No tienes permisos para eliminar sesiones'], 403);
             return;
         }
-        
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->jsonResponse(['error' => 'Método no permitido'], 405);
             return;
         }
-        
+
+        if (!$this->verifyCSRFToken($_POST['csrf_token'] ?? '')) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'Token de seguridad inválido'], 403);
+            } else {
+                $this->setFlashMessage('Token de seguridad inválido', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+
         $id = intval($_POST['id'] ?? 0);
         if ($id <= 0) {
             $this->jsonResponse(['error' => 'ID de sesión no válido'], 400);
             return;
         }
-        
+
+        // Motivo de eliminación obligatorio (mínimo 10, máximo 500 caracteres)
+        $motivo = trim($_POST['motivo'] ?? '');
+        if (strlen($motivo) < 10) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'Debe indicar el motivo de la eliminación (mínimo 10 caracteres).'], 400);
+            } else {
+                $this->setFlashMessage('Debe indicar el motivo de la eliminación (mínimo 10 caracteres).', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+        if (strlen($motivo) > 500) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'El motivo no puede superar los 500 caracteres.'], 400);
+            } else {
+                $this->setFlashMessage('El motivo no puede superar los 500 caracteres.', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+
         // Verificar que la sesión existe
         $sesion = $this->sesionModel->find($id);
         if (!$sesion) {
             $this->jsonResponse(['error' => 'Sesión no encontrada'], 404);
             return;
         }
-        
+
+        // Verificar que el profesor solo elimine sus propias sesiones
+        if (!$this->canAccessSession($id)) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para acceder a esta sesión'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para acceder a esta sesión', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+
+        $forceDelete = ($_POST['force_delete'] ?? '0') === '1';
+
         try {
             // Verificar si la sesión tiene asistencias registradas
             $asistenciasCount = $this->sesionModel->countAttendances($id);
-            
-            if ($asistenciasCount > 0) {
-                $this->jsonResponse([
-                    'error' => 'No se puede eliminar la sesión porque tiene ' . $asistenciasCount . ' asistencia(s) registrada(s)'
-                ], 400);
+
+            if ($asistenciasCount > 0 && !$forceDelete) {
+                $msg = 'La sesión tiene ' . $asistenciasCount . ' registro(s) de asistencia. Confirma nuevamente desde la interfaz para eliminarla.';
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['error' => $msg, 'has_attendances' => true, 'count' => $asistenciasCount], 409);
+                } else {
+                    $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
                 return;
             }
-            
-            // Eliminar sesión
+
+            // Eliminar sesión (con registro de asistencias si forzado)
             $result = $this->sesionModel->delete($id);
-            
+
             if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                } else {
+                    $this->setFlashMessage(implode(', ', (array)$result['errors']), 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
             } else {
-                $this->logActivity('sesion_deleted', $id, null, ['sesion_eliminada' => $sesion['fecha'] . ' - ' . $sesion['hora_inicio']]);
-                $this->jsonResponse([
-                    'success' => true,
-                    'message' => 'Sesión eliminada correctamente'
-                ]);
+                $logData = [
+                    'sesion_eliminada'    => $sesion['fecha'] . ' - ' . $sesion['hora_inicio'],
+                    'motivo'             => $motivo,
+                    'eliminado_por'      => $this->currentUser['id'] ?? null,
+                ];
+                if ($forceDelete && $asistenciasCount > 0) {
+                    $logData['asistencias_eliminadas'] = $asistenciasCount;
+                    $logData['eliminacion_forzada'] = true;
+                }
+                $this->logActivity('sesion_deleted', 'sesiones', $id, $logData);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true, 'message' => 'Sesión eliminada correctamente']);
+                } else {
+                    $this->setFlashMessage('Sesión eliminada correctamente', 'success');
+                    $this->redirect('index.php?page=sesiones');
+                }
             }
             
         } catch (Exception $e) {
@@ -270,20 +382,37 @@ class SesionesController extends BaseController {
             $this->jsonResponse(['error' => 'ID de sesión no válido'], 400);
             return;
         }
-        
+
+        // Verificar que el profesor solo active sus propias sesiones
+        if (!$this->canAccessSession($id)) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para acceder a esta sesión'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para acceder a esta sesión', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+
         try {
             $result = $this->sesionModel->updateStatus($id, 'activa');
-            
             if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
+                $msg = implode(', ', (array)$result['errors']);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                } else {
+                    $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
             } else {
-                $this->logActivity('sesion_activated', $id);
-                $this->jsonResponse([
-                    'success' => true,
-                    'message' => 'Sesión activada correctamente'
-                ]);
+                $this->logActivity('sesion_activated', 'sesiones', $id);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true, 'message' => 'Sesión activada correctamente']);
+                } else {
+                    $this->setFlashMessage('Sesión activada correctamente', 'success');
+                    $this->redirect('index.php?page=sesiones');
+                }
             }
-            
         } catch (Exception $e) {
             $this->handleSesionesError($e, 'Error al activar la sesión');
         }
@@ -309,20 +438,37 @@ class SesionesController extends BaseController {
             $this->jsonResponse(['error' => 'ID de sesión no válido'], 400);
             return;
         }
-        
+
+        // Verificar que el profesor solo finalice sus propias sesiones
+        if (!$this->canAccessSession($id)) {
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para acceder a esta sesión'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para acceder a esta sesión', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
+            return;
+        }
+
         try {
             $result = $this->sesionModel->updateStatus($id, 'finalizada');
-            
             if (isset($result['errors'])) {
-                $this->jsonResponse(['errors' => $result['errors']], 400);
+                $msg = implode(', ', (array)$result['errors']);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['errors' => $result['errors']], 400);
+                } else {
+                    $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
             } else {
-                $this->logActivity('sesion_deactivated', $id);
-                $this->jsonResponse([
-                    'success' => true,
-                    'message' => 'Sesión finalizada correctamente'
-                ]);
+                $this->logActivity('sesion_deactivated', 'sesiones', $id);
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['success' => true, 'message' => 'Sesión finalizada correctamente']);
+                } else {
+                    $this->setFlashMessage('Sesión finalizada correctamente', 'success');
+                    $this->redirect('index.php?page=sesiones');
+                }
             }
-            
         } catch (Exception $e) {
             $this->handleSesionesError($e, 'Error al finalizar la sesión');
         }
@@ -361,6 +507,183 @@ class SesionesController extends BaseController {
     }
     
     /**
+     * Vista de impresión de sesión con lista de asistencia y firmas
+     */
+    public function imprimir() {
+        if (!$this->hasPermission('sesiones_read')) {
+            $this->redirectUnauthorized();
+            return;
+        }
+
+        $id = intval($_GET['sesion_id'] ?? 0);
+        if ($id <= 0) {
+            $this->setFlashMessage('ID de sesión no válido', 'error');
+            $this->redirect('index.php?page=sesiones');
+            return;
+        }
+
+        try {
+            $sesion = $this->sesionModel->getWithCursoInfo($id);
+            if (!$sesion) {
+                $this->setFlashMessage('Sesión no encontrada', 'error');
+                $this->redirect('index.php?page=sesiones');
+                return;
+            }
+
+            // Verificar que el profesor solo imprima sus propias sesiones
+            if ($this->currentUser['rol'] === 'profesor') {
+                require_once __DIR__ . '/../models/Curso.php';
+                $cursoModel = new Curso();
+                $curso = $cursoModel->find($sesion['curso_id']);
+                if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                    $this->redirectUnauthorized();
+                    return;
+                }
+            }
+
+            require_once __DIR__ . '/../models/Asistencia.php';
+            $asistenciaModel = new Asistencia();
+            $asistencias = $asistenciaModel->getBySesion($id);
+
+            $this->render('admin/sesion_imprimir', [
+                'page_title' => 'Lista de asistencia',
+                'sesion'     => $sesion,
+                'asistencias' => $asistencias,
+            ]);
+
+        } catch (Exception $e) {
+            $this->handleSesionesError($e, 'Error al cargar la sesión para impresión');
+        }
+    }
+
+    /**
+     * Vista de detalle / monitoreo en vivo de una sesion
+     */
+    public function detalle() {
+        if (!$this->hasPermission('sesiones_read')) {
+            $this->redirectUnauthorized();
+            return;
+        }
+
+        $id = intval($_GET['sesion_id'] ?? 0);
+        if ($id <= 0) {
+            $this->setFlashMessage('ID de sesion no valido', 'error');
+            $this->redirect('index.php?page=sesiones');
+            return;
+        }
+
+        try {
+            $sesion = $this->sesionModel->getWithCursoInfo($id);
+            if (!$sesion) {
+                $this->setFlashMessage('Sesion no encontrada', 'error');
+                $this->redirect('index.php?page=sesiones');
+                return;
+            }
+
+            // Profesores solo ven sus propias sesiones
+            if ($this->currentUser['rol'] === 'profesor') {
+                require_once __DIR__ . '/../models/Curso.php';
+                $cursoModel = new Curso();
+                $curso = $cursoModel->find($sesion['curso_id']);
+                if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                    $this->redirectUnauthorized();
+                    return;
+                }
+            }
+
+            require_once __DIR__ . '/../models/Asistencia.php';
+            $asistenciaModel = new Asistencia();
+            $asistencias = $asistenciaModel->getBySesion($id);
+
+            $this->render('admin/sesion_detalle', [
+                'page_title' => 'Detalle de sesion',
+                'sesion'     => $sesion,
+                'asistencias' => $asistencias,
+                'can_activate' => $this->hasPermission('sesiones_activate'),
+            ]);
+
+        } catch (Exception $e) {
+            $this->handleSesionesError($e, 'Error al cargar el detalle de la sesion');
+        }
+    }
+
+    /**
+     * Endpoint JSON para polling de asistencias en vivo
+     * GET ?page=sesiones&action=asistencia_json&sesion_id=X
+     */
+    public function asistenciaJson() {
+        header('Content-Type: application/json; charset=utf-8');
+
+        if (!$this->hasPermission('sesiones_read')) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'error' => 'Sin permiso']);
+            return;
+        }
+
+        $id = intval($_GET['sesion_id'] ?? 0);
+        if ($id <= 0) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'ID invalido']);
+            return;
+        }
+
+        try {
+            $sesion = $this->sesionModel->find($id);
+            if (!$sesion) {
+                http_response_code(404);
+                echo json_encode(['ok' => false, 'error' => 'Sesion no encontrada']);
+                return;
+            }
+
+            // Profesores solo ven sus propias sesiones
+            if ($this->currentUser['rol'] === 'profesor') {
+                if (!$this->sesionModel->canUserManageSession($this->currentUser['id'], $id)) {
+                    http_response_code(403);
+                    echo json_encode(['ok' => false, 'error' => 'Sin permiso']);
+                    return;
+                }
+            }
+
+            require_once __DIR__ . '/../models/Asistencia.php';
+            $asistenciaModel = new Asistencia();
+            $asistencias = $asistenciaModel->getBySesion($id);
+
+            $conFirma = 0;
+            $lista = [];
+            foreach ($asistencias as $a) {
+                $tieneFirma = !empty($a['firma']) && str_starts_with($a['firma'], 'data:image/');
+                if ($tieneFirma) {
+                    $conFirma++;
+                }
+                $hora = '';
+                if (!empty($a['hora_registro'])) {
+                    $hora = date('H:i', strtotime($a['hora_registro']));
+                }
+                $lista[] = [
+                    'nombre'      => $a['estudiante_nombre'] ?? '',
+                    'documento'   => $a['estudiante_documento'] ?? '',
+                    'hora'        => $hora,
+                    'tiene_firma' => $tieneFirma,
+                ];
+            }
+
+            echo json_encode([
+                'ok'         => true,
+                'total'      => count($asistencias),
+                'con_firma'  => $conFirma,
+                'estado'     => $sesion['estado'],
+                'timestamp'  => date('Y-m-d H:i:s'),
+                'asistencias' => $lista,
+            ]);
+
+        } catch (Exception $e) {
+            error_log('SesionesController::asistenciaJson error: ' . $e->getMessage());
+            http_response_code(500);
+            echo json_encode(['ok' => false, 'error' => 'Error interno']);
+        }
+    }
+
+    /**
      * Procesar formulario de sesión (crear/editar)
      */
     private function processSessionForm($id = 0) {
@@ -370,12 +693,16 @@ class SesionesController extends BaseController {
         }
         
         // Validar y sanitizar datos
+        $aula = trim($this->sanitizeInput($_POST['aula'] ?? ''));
+        $sede = trim($this->sanitizeInput($_POST['sede'] ?? ''));
         $data = [
-            'curso_id' => intval($_POST['curso_id'] ?? 0),
-            'fecha' => $this->sanitizeInput($_POST['fecha'] ?? ''),
+            'curso_id'    => intval($_POST['curso_id'] ?? 0),
+            'fecha'       => $this->sanitizeInput($_POST['fecha'] ?? ''),
             'hora_inicio' => $this->sanitizeInput($_POST['hora_inicio'] ?? ''),
-            'hora_fin' => $this->sanitizeInput($_POST['hora_fin'] ?? ''),
-            'estado' => $this->sanitizeInput($_POST['estado'] ?? 'programada')
+            'hora_fin'    => $this->sanitizeInput($_POST['hora_fin'] ?? ''),
+            'estado'      => $this->sanitizeInput($_POST['estado'] ?? 'activa'),
+            'aula'        => $aula !== '' ? substr($aula, 0, 30) : null,
+            'sede'        => $sede !== '' ? substr($sede, 0, 50) : null,
         ];
         
         // Validar datos
@@ -418,7 +745,7 @@ class SesionesController extends BaseController {
         
         // Generar token para nueva sesión
         if ($id === 0) {
-            $data['token'] = bin2hex(random_bytes(16));
+            $data['token'] = bin2hex(random_bytes(32));
         }
         
         // Crear o actualizar sesión
@@ -431,7 +758,8 @@ class SesionesController extends BaseController {
                 return isset($result['errors']) ? $result : ['success' => true, 'id' => $result, 'data' => $data];
             }
         } catch (Exception $e) {
-            return ['errors' => ['Error al procesar la sesión: ' . $e->getMessage()]];
+            error_log('procesarSesionForm error: ' . $e->getMessage());
+            return ['errors' => ['Error al procesar la sesión. Intente nuevamente.']];
         }
     }
     
@@ -536,22 +864,19 @@ class SesionesController extends BaseController {
      */
     private function redirectUnauthorized() {
         $this->setFlashMessage('No tienes permisos para acceder a esta sección', 'error');
-        $this->redirect('index.php?page=login&error=permissions');
+        $this->redirect('index.php?page=dashboard');
     }
     
     /**
      * Manejar errores
      */
     protected function handleSesionesError($exception, $userMessage = 'Ha ocurrido un error') {
-        // Log del error
-        error_log($exception->getMessage());
-        
+        error_log('SesionesController: ' . $exception->getMessage());
         if ($this->isAjaxRequest()) {
             $this->jsonResponse(['error' => $userMessage], 500);
         } else {
             $this->setFlashMessage($userMessage, 'error');
-            $this->redirect('index.php?page=sesiones');
+            $this->redirect('index.php?page=dashboard');
         }
     }
 }
-?>

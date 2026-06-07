@@ -122,8 +122,9 @@ function renderTable($options = []) {
                                         // Reemplazar placeholders en URL y onclick
                                         if (is_array($row)) {
                                             foreach ($row as $key => $val) {
-                                                $actionUrl = str_replace('{' . $key . '}', $val, $actionUrl);
-                                                $actionOnclick = str_replace('{' . $key . '}', $val, $actionOnclick);
+                                                $safeVal = (string)($val ?? '');
+                                                $actionUrl     = str_replace('{' . $key . '}', $safeVal, $actionUrl);
+                                                $actionOnclick = str_replace('{' . $key . '}', $safeVal, $actionOnclick);
                                             }
                                         }
                                     ?>

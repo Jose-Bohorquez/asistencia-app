@@ -164,6 +164,41 @@ function renderStatCard($options = []) {
 }
 
 /**
+ * Badge / etiqueta de estado
+ * @param array $options  text, type (success|warning|danger|info|primary|secondary), size (xs|sm)
+ */
+if (!function_exists('renderBadge')):
+function renderBadge($options = []) {
+    if (is_string($options)) {
+        $options = ['text' => $options];
+    }
+    $text = htmlspecialchars($options['text'] ?? '');
+    $type = $options['type'] ?? 'primary';
+    $size = $options['size'] ?? 'sm';
+
+    $colorMap = [
+        'success'   => 'bg-green-100 text-green-800 border border-green-200',
+        'warning'   => 'bg-yellow-100 text-yellow-800 border border-yellow-200',
+        'danger'    => 'bg-red-100 text-red-800 border border-red-200',
+        'info'      => 'bg-cyan-100 text-cyan-800 border border-cyan-200',
+        'primary'   => 'bg-blue-100 text-blue-800 border border-blue-200',
+        'secondary' => 'bg-gray-100 text-gray-700 border border-gray-200',
+        'purple'    => 'bg-purple-100 text-purple-800 border border-purple-200',
+    ];
+    $sizeMap = [
+        'xs' => 'px-1.5 py-0.5 text-xs',
+        'sm' => 'px-2 py-0.5 text-xs',
+        'md' => 'px-2.5 py-1 text-sm',
+    ];
+
+    $colorClass = $colorMap[$type] ?? $colorMap['primary'];
+    $sizeClass  = $sizeMap[$size] ?? $sizeMap['sm'];
+
+    return "<span class=\"inline-flex items-center font-semibold rounded-full {$colorClass} {$sizeClass}\">{$text}</span>";
+}
+endif;
+
+/**
  * Componente de Tarjeta Simple
  */
 function renderSimpleCard($title, $content, $extraClasses = '') {
