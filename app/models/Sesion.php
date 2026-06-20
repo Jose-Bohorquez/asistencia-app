@@ -810,4 +810,31 @@ class Sesion extends BaseModel {
         $stmt->close();
         return $row;
     }
+
+    /**
+     * Elimina la sesión junto con todas sus asistencias (FK RESTRICT no tiene CASCADE).
+     * Usa una transacción: primero borra asistencias, luego la sesión.
+     */
+    public function delete($id) {
+        $conn = $this->getConnection();
+        $conn->begin_transaction();
+        try {
+            $stmt = $conn->prepare("DELETE FROM asistencias WHERE sesion_id = ?");
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $stmt->close();
+
+            $stmt = $conn->prepare("DELETE FROM sesiones WHERE id = ?");
+            $stmt->bind_param('i', $id);
+            $stmt->execute();
+            $affected = $stmt->affected_rows;
+            $stmt->close();
+
+            $conn->commit();
+            return $affected > 0;
+        } catch (Exception $e) {
+            $conn->rollback();
+            throw $e;
+        }
+    }
 }
