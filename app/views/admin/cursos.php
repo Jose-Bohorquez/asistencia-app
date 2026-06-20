@@ -379,7 +379,6 @@ $esAdmin = in_array($current_user['rol'] ?? '', ['super_admin', 'admin']);
 
 <?php
 $customJS = <<<'JS'
-<script>
 (function() {
     // ── Referencias ──────────────────────────────────────────────
     const formCurso   = document.getElementById('formCurso');
@@ -508,7 +507,6 @@ $customJS = <<<'JS'
         });
     });
 })();
-</script>
 JS;
 
 $content = ob_get_clean();
