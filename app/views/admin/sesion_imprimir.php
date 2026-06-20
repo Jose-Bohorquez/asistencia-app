@@ -280,8 +280,16 @@
                 <td><?= $a ? htmlspecialchars($a['estudiante_direccion'] ?? '') : '' ?></td>
                 <td><?= $a ? htmlspecialchars($a['estudiante_correo'] ?? '') : '' ?></td>
                 <td style="text-align:center;">
-                    <?php if ($a && !empty($a['firma']) && str_starts_with($a['firma'], 'data:image/png;base64,')): ?>
-                        <img src="<?= htmlspecialchars($a['firma']) ?>" alt="Firma" class="firma-img">
+                    <?php
+                        $firmaSrc = null;
+                        if (!empty($a['firma_path'])) {
+                            $firmaSrc = '/' . htmlspecialchars($a['firma_path']);
+                        } elseif (!empty($a['firma']) && str_starts_with($a['firma'], 'data:image/')) {
+                            $firmaSrc = htmlspecialchars($a['firma']);
+                        }
+                    ?>
+                    <?php if ($firmaSrc): ?>
+                        <img src="<?= $firmaSrc ?>" alt="Firma" class="firma-img">
                     <?php endif; ?>
                 </td>
             </tr>

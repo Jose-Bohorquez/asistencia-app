@@ -338,6 +338,20 @@ class AsistenciaController extends BaseController {
         }
         $firmaHash = hash('sha256', $firma);
 
+        // Guardar firma como archivo PNG en disco (no como base64 en BD)
+        $firmaBase64Data = str_replace('data:image/png;base64,', '', $firma);
+        $firmaBinary     = base64_decode($firmaBase64Data);
+        $uploadDir       = dirname(__DIR__, 2) . '/public/uploads/firmas/' . date('Y/m');
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+        $firmaFilename = 'firma_' . time() . '_' . bin2hex(random_bytes(4)) . '.png';
+        $firmaRelPath  = 'uploads/firmas/' . date('Y/m') . '/' . $firmaFilename;
+        $firmaAbsPath  = $uploadDir . '/' . $firmaFilename;
+        if (file_put_contents($firmaAbsPath, $firmaBinary) === false) {
+            return ['error' => 'No se pudo guardar la firma. Intente nuevamente.'];
+        }
+
         try {
             // Buscar o crear estudiante
             $estudiante = $this->estudianteModel->findByDocumento($documento);
@@ -376,14 +390,15 @@ class AsistenciaController extends BaseController {
                 return ['error' => 'Ya has registrado tu asistencia para esta sesión.'];
             }
 
-            // Registrar asistencia con firma
+            // Registrar asistencia — firma guardada en disco, no en BD
             $asistenciaData = [
                 'sesion_id'     => $sesion['id'],
                 'estudiante_id' => $estudiante_id,
                 'hora_registro' => date('Y-m-d H:i:s'),
                 'ip_address'    => $_SERVER['REMOTE_ADDR'] ?? '',
                 'user_agent'    => substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
-                'firma'         => $firma,
+                'firma'         => null,
+                'firma_path'    => $firmaRelPath,
                 'firma_hash'    => $firmaHash,
             ];
 

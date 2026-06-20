@@ -153,7 +153,7 @@ class Estudiante extends BaseModel {
                 u.nombre as profesor_nombre,
                 ce.fecha_inscripcion
             FROM cursos c
-            INNER JOIN cursos_estudiantes ce ON c.id = ce.curso_id
+            INNER JOIN matriculas ce ON c.id = ce.curso_id
             INNER JOIN programas p ON c.programa_id = p.id
             INNER JOIN usuarios u ON c.profesor_id = u.id
             WHERE ce.estudiante_id = ? AND c.activo = 1
@@ -425,7 +425,7 @@ class Estudiante extends BaseModel {
                 e.*,
                 ce.fecha_inscripcion
             FROM estudiantes e
-            INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id
+            INNER JOIN matriculas ce ON e.id = ce.estudiante_id
             WHERE ce.curso_id = ? AND e.activo = 1
             ORDER BY e.nombre
         ");
@@ -466,7 +466,7 @@ class Estudiante extends BaseModel {
         $stmt->close();
         
         // Verificar que no esté ya inscrito
-        $stmt = $conn->prepare("SELECT id FROM cursos_estudiantes WHERE estudiante_id = ? AND curso_id = ?");
+        $stmt = $conn->prepare("SELECT id FROM matriculas WHERE estudiante_id = ? AND curso_id = ?");
         $stmt->bind_param("ii", $estudianteId, $cursoId);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -478,7 +478,10 @@ class Estudiante extends BaseModel {
         $stmt->close();
         
         // Inscribir estudiante
-        $stmt = $conn->prepare("INSERT INTO cursos_estudiantes (estudiante_id, curso_id, fecha_inscripcion) VALUES (?, ?, NOW())");
+        $stmt = $conn->prepare("
+            INSERT INTO matriculas (estudiante_id, curso_id, fecha_inscripcion, periodo_id)
+            VALUES (?, ?, NOW(), (SELECT id FROM periodos_academicos WHERE activo=1 LIMIT 1))
+        ");
         $stmt->bind_param("ii", $estudianteId, $cursoId);
         $success = $stmt->execute();
         $stmt->close();
@@ -495,7 +498,7 @@ class Estudiante extends BaseModel {
      */
     public function desinscribirDeCurso($estudianteId, $cursoId) {
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("DELETE FROM cursos_estudiantes WHERE estudiante_id = ? AND curso_id = ?");
+        $stmt = $conn->prepare("DELETE FROM matriculas WHERE estudiante_id = ? AND curso_id = ?");
         $stmt->bind_param("ii", $estudianteId, $cursoId);
         $success = $stmt->execute();
         $stmt->close();
@@ -525,7 +528,7 @@ class Estudiante extends BaseModel {
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT e.id) as total 
             FROM estudiantes e 
-            INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id 
+            INNER JOIN matriculas ce ON e.id = ce.estudiante_id 
             INNER JOIN cursos c ON ce.curso_id = c.id 
             WHERE e.activo = 1 AND c.activo = 1
         ");
@@ -539,7 +542,7 @@ class Estudiante extends BaseModel {
             SELECT AVG(cursos_por_estudiante.total) as promedio
             FROM (
                 SELECT COUNT(*) as total
-                FROM cursos_estudiantes ce
+                FROM matriculas ce
                 INNER JOIN estudiantes e ON ce.estudiante_id = e.id
                 INNER JOIN cursos c ON ce.curso_id = c.id
                 WHERE e.activo = 1 AND c.activo = 1
@@ -631,7 +634,7 @@ class Estudiante extends BaseModel {
         $conn = $this->getConnection();
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT ce.estudiante_id) as total
-            FROM cursos_estudiantes ce
+            FROM matriculas ce
             INNER JOIN cursos c ON ce.curso_id = c.id
             WHERE c.profesor_id = ? AND c.activo = 1
         ");
@@ -654,7 +657,7 @@ class Estudiante extends BaseModel {
 
     public function estaInscritoEnCurso($estudianteId, $cursoId) {
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("SELECT id FROM cursos_estudiantes WHERE estudiante_id = ? AND curso_id = ?");
+        $stmt = $conn->prepare("SELECT id FROM matriculas WHERE estudiante_id = ? AND curso_id = ?");
         $stmt->bind_param("ii", $estudianteId, $cursoId);
         $stmt->execute();
         $exists = $stmt->get_result()->num_rows > 0;

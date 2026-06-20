@@ -651,7 +651,7 @@ class SesionesController extends BaseController {
             $conFirma = 0;
             $lista = [];
             foreach ($asistencias as $a) {
-                $tieneFirma = !empty($a['firma']) && str_starts_with($a['firma'], 'data:image/');
+                $tieneFirma = !empty($a['firma_path']) || (!empty($a['firma']) && str_starts_with($a['firma'], 'data:image/'));
                 if ($tieneFirma) {
                     $conFirma++;
                 }

@@ -294,7 +294,7 @@ class RoleMiddleware extends Middleware {
             $stmt = $this->db->prepare("
                 SELECT DISTINCT e.id 
                 FROM estudiantes e 
-                INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id 
+                INNER JOIN matriculas ce ON e.id = ce.estudiante_id 
                 INNER JOIN cursos c ON ce.curso_id = c.id 
                 WHERE e.id = ? AND c.profesor_id = ?
             ");

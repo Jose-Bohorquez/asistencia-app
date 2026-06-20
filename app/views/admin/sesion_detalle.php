@@ -204,7 +204,7 @@ ob_start();
                     <?php else: ?>
                     <?php foreach ($asistencias as $i => $a): ?>
                     <?php
-                        $tieneFirma = !empty($a['firma']) && str_starts_with($a['firma'], 'data:image/');
+                        $tieneFirma = !empty($a['firma_path']) || (!empty($a['firma']) && str_starts_with($a['firma'], 'data:image/'));
                         $hora = !empty($a['hora_registro']) ? date('H:i', strtotime($a['hora_registro'])) : '—';
                     ?>
                     <tr class="hover:bg-gray-50 transition-colors">
@@ -242,7 +242,7 @@ ob_start();
             <?php else: ?>
             <?php foreach ($asistencias as $i => $a): ?>
             <?php
-                $tieneFirma = !empty($a['firma']) && str_starts_with($a['firma'], 'data:image/');
+                $tieneFirma = !empty($a['firma_path']) || (!empty($a['firma']) && str_starts_with($a['firma'], 'data:image/'));
                 $hora = !empty($a['hora_registro']) ? date('H:i', strtotime($a['hora_registro'])) : '—';
             ?>
             <div class="px-4 py-3 flex items-center gap-3">

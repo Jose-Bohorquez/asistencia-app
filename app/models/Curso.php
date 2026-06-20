@@ -126,7 +126,7 @@ class Curso extends BaseModel {
                 p.nombre as programa_nombre,
                 u.nombre as profesor_nombre,
                 u.email as profesor_email,
-                (SELECT COUNT(*) FROM cursos_estudiantes ce WHERE ce.curso_id = c.id) as total_estudiantes,
+                (SELECT COUNT(*) FROM matriculas ce WHERE ce.curso_id = c.id) as total_estudiantes,
                 (SELECT COUNT(*) FROM sesiones s WHERE s.curso_id = c.id) as total_sesiones
             FROM cursos c
             LEFT JOIN programas p ON c.programa_id = p.id
@@ -283,7 +283,10 @@ class Curso extends BaseModel {
         }
         
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("INSERT INTO cursos_estudiantes (curso_id, estudiante_id, fecha_inscripcion) VALUES (?, ?, NOW())");
+        $stmt = $conn->prepare("
+            INSERT INTO matriculas (curso_id, estudiante_id, fecha_inscripcion, periodo_id)
+            VALUES (?, ?, NOW(), (SELECT id FROM periodos_academicos WHERE activo=1 LIMIT 1))
+        ");
         $stmt->bind_param("ii", $cursoId, $estudianteId);
         $success = $stmt->execute();
         $stmt->close();
@@ -300,7 +303,7 @@ class Curso extends BaseModel {
      */
     public function desinscribirEstudiante($cursoId, $estudianteId) {
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("DELETE FROM cursos_estudiantes WHERE curso_id = ? AND estudiante_id = ?");
+        $stmt = $conn->prepare("DELETE FROM matriculas WHERE curso_id = ? AND estudiante_id = ?");
         $stmt->bind_param("ii", $cursoId, $estudianteId);
         $success = $stmt->execute();
         $stmt->close();
@@ -323,7 +326,7 @@ class Curso extends BaseModel {
                 e.*,
                 ce.fecha_inscripcion
             FROM estudiantes e
-            INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id
+            INNER JOIN matriculas ce ON e.id = ce.estudiante_id
             WHERE ce.curso_id = ?
             ORDER BY e.nombre
         ");
@@ -361,7 +364,7 @@ class Curso extends BaseModel {
      */
     private function estudianteInscrito($cursoId, $estudianteId) {
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("SELECT id FROM cursos_estudiantes WHERE curso_id = ? AND estudiante_id = ?");
+        $stmt = $conn->prepare("SELECT id FROM matriculas WHERE curso_id = ? AND estudiante_id = ?");
         $stmt->bind_param("ii", $cursoId, $estudianteId);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -381,7 +384,7 @@ class Curso extends BaseModel {
         // Si se especifica un curso
         if ($cursoId) {
             // Total estudiantes inscritos
-            $stmt = $conn->prepare("SELECT COUNT(*) as total FROM cursos_estudiantes WHERE curso_id = ?");
+            $stmt = $conn->prepare("SELECT COUNT(*) as total FROM matriculas WHERE curso_id = ?");
             $stmt->bind_param("i", $cursoId);
             $stmt->execute();
             $result = $stmt->get_result();

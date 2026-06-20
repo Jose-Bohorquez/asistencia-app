@@ -143,7 +143,7 @@ class Programa extends BaseModel {
         $stmt = $conn->prepare("
             SELECT COUNT(DISTINCT ce.estudiante_id) as total
             FROM cursos c
-            INNER JOIN cursos_estudiantes ce ON c.id = ce.curso_id
+            INNER JOIN matriculas ce ON c.id = ce.curso_id
             INNER JOIN estudiantes e ON ce.estudiante_id = e.id
             WHERE c.programa_id = ? AND c.activo = 1 AND e.activo = 1
         ");
@@ -193,7 +193,7 @@ class Programa extends BaseModel {
                 c.*,
                 u.nombre as profesor_nombre,
                 u.email as profesor_email,
-                (SELECT COUNT(*) FROM cursos_estudiantes ce WHERE ce.curso_id = c.id) as total_estudiantes
+                (SELECT COUNT(*) FROM matriculas ce WHERE ce.curso_id = c.id) as total_estudiantes
             FROM cursos c
             INNER JOIN usuarios u ON c.profesor_id = u.id
             WHERE c.programa_id = ? AND c.activo = 1
@@ -332,7 +332,7 @@ class Programa extends BaseModel {
                 COUNT(DISTINCT ce.estudiante_id) as total_estudiantes
             FROM programas p
             LEFT JOIN cursos c ON p.id = c.programa_id AND c.activo = 1
-            LEFT JOIN cursos_estudiantes ce ON c.id = ce.curso_id
+            LEFT JOIN matriculas ce ON c.id = ce.curso_id
             LEFT JOIN estudiantes e ON ce.estudiante_id = e.id AND e.activo = 1
             WHERE p.activo = 1
             GROUP BY p.id, p.nombre, p.codigo
@@ -370,7 +370,7 @@ class Programa extends BaseModel {
                     2
                 ) as porcentaje_asistencia
             FROM cursos c
-            LEFT JOIN cursos_estudiantes ce ON c.id = ce.curso_id
+            LEFT JOIN matriculas ce ON c.id = ce.curso_id
             LEFT JOIN estudiantes e ON ce.estudiante_id = e.id AND e.activo = 1
             LEFT JOIN sesiones s ON c.id = s.curso_id AND s.estado = 'finalizada'
             LEFT JOIN asistencias a ON s.id = a.sesion_id AND e.id = a.estudiante_id
@@ -444,7 +444,7 @@ class Programa extends BaseModel {
                 CASE WHEN p.activo = 1 THEN 'Activo' ELSE 'Inactivo' END as estado
             FROM programas p
             LEFT JOIN cursos c ON p.id = c.programa_id AND c.activo = 1
-            LEFT JOIN cursos_estudiantes ce ON c.id = ce.curso_id
+            LEFT JOIN matriculas ce ON c.id = ce.curso_id
             LEFT JOIN estudiantes e ON ce.estudiante_id = e.id AND e.activo = 1
             GROUP BY p.id, p.codigo, p.nombre, p.activo
             ORDER BY p.nombre

@@ -7,7 +7,7 @@ require_once __DIR__ . '/BaseModel.php';
  */
 class Asistencia extends BaseModel {
     protected $table = 'asistencias';
-    protected $fillable = ['sesion_id', 'estudiante_id', 'presente', 'hora_registro', 'ip_address', 'user_agent', 'observaciones', 'firma', 'firma_hash'];
+    protected $fillable = ['sesion_id', 'estudiante_id', 'estado_asistencia', 'estado_id', 'hora_registro', 'ip_address', 'user_agent', 'observaciones', 'firma', 'firma_path', 'firma_hash'];
     
     /**
      * Registrar asistencia
@@ -15,9 +15,8 @@ class Asistencia extends BaseModel {
     public function registrar($data) {
         // Validar datos requeridos
         $errors = $this->validate($data, [
-            'sesion_id' => 'required',
+            'sesion_id'     => 'required',
             'estudiante_id' => 'required',
-            'presente' => 'required'
         ]);
         
         if (!empty($errors)) {
@@ -76,7 +75,7 @@ class Asistencia extends BaseModel {
         }
         
         // Solo permitir actualizar ciertos campos
-        $allowedFields = ['presente', 'observaciones'];
+        $allowedFields = ['estado_asistencia', 'observaciones'];
         $filteredData = array_intersect_key($data, array_flip($allowedFields));
         
         if (empty($filteredData)) {
@@ -186,11 +185,11 @@ class Asistencia extends BaseModel {
                 e.codigo as estudiante_codigo,
                 COUNT(s.id) as total_sesiones,
                 COUNT(a.id) as total_asistencias,
-                SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) as asistencias_presentes,
-                SUM(CASE WHEN a.presente = 0 THEN 1 ELSE 0 END) as asistencias_ausentes,
-                ROUND((SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(s.id)) * 100, 2) as porcentaje_asistencia
+                SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as asistencias_presentes,
+                SUM(CASE WHEN a.estado_asistencia != 'presente' THEN 1 ELSE 0 END) as asistencias_ausentes,
+                ROUND((SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / COUNT(s.id)) * 100, 2) as porcentaje_asistencia
             FROM estudiantes e
-            INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id
+            INNER JOIN matriculas ce ON e.id = ce.estudiante_id
             LEFT JOIN sesiones s ON ce.curso_id = s.curso_id AND s.estado = 'finalizada'
             LEFT JOIN asistencias a ON s.id = a.sesion_id AND e.id = a.estudiante_id
             WHERE ce.curso_id = ?
@@ -282,32 +281,29 @@ class Asistencia extends BaseModel {
         
         // Asistencias por estado (presente/ausente)
         $sql = "
-            SELECT 
-                a.presente,
-                COUNT(*) as total
-            FROM asistencias a 
-            INNER JOIN sesiones s ON a.sesion_id = s.id 
-            INNER JOIN cursos c ON s.curso_id = c.id 
+            SELECT
+                SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as presentes,
+                SUM(CASE WHEN a.estado_asistencia != 'presente' THEN 1 ELSE 0 END) as ausentes
+            FROM asistencias a
+            INNER JOIN sesiones s ON a.sesion_id = s.id
+            INNER JOIN cursos c ON s.curso_id = c.id
             {$whereClause}
-            GROUP BY a.presente
         ";
-        
+
         $stmt = $conn->prepare($sql);
         if (!empty($params)) {
             $stmt->bind_param($types, ...$params);
         }
         $stmt->execute();
         $result = $stmt->get_result();
-        
+
         $stats['presentes'] = 0;
         $stats['ausentes'] = 0;
-        
-        while ($row = $result->fetch_assoc()) {
-            if ($row['presente'] == 1) {
-                $stats['presentes'] = $row['total'];
-            } else {
-                $stats['ausentes'] = $row['total'];
-            }
+
+        $row = $result->fetch_assoc();
+        if ($row) {
+            $stats['presentes'] = (int)($row['presentes'] ?? 0);
+            $stats['ausentes']  = (int)($row['ausentes']  ?? 0);
         }
         $stmt->close();
         
@@ -378,7 +374,7 @@ class Asistencia extends BaseModel {
      */
     private function estudianteInscritoEnCurso($estudianteId, $cursoId) {
         $conn = $this->getConnection();
-        $stmt = $conn->prepare("SELECT id FROM cursos_estudiantes WHERE estudiante_id = ? AND curso_id = ?");
+        $stmt = $conn->prepare("SELECT id FROM matriculas WHERE estudiante_id = ? AND curso_id = ?");
         $stmt->bind_param("ii", $estudianteId, $cursoId);
         $stmt->execute();
         $result = $stmt->get_result();
@@ -432,13 +428,13 @@ class Asistencia extends BaseModel {
                 // Verificar si ya existe el registro
                 if (!$this->asistenciaExists($sesionId, $estudianteId)) {
                     $data = [
-                        'sesion_id' => $sesionId,
-                        'estudiante_id' => $estudianteId,
-                        'presente' => $presente ? 1 : 0,
-                        'hora_registro' => date('Y-m-d H:i:s'),
-                        'ip_address' => $_SERVER['REMOTE_ADDR'] ?? null,
-                        'user_agent' => 'Sistema - Marcado Masivo',
-                        'observaciones' => 'Marcado masivamente por el sistema'
+                        'sesion_id'        => $sesionId,
+                        'estudiante_id'    => $estudianteId,
+                        'estado_asistencia'=> $presente ? 'presente' : 'ausente',
+                        'hora_registro'    => date('Y-m-d H:i:s'),
+                        'ip_address'       => $_SERVER['REMOTE_ADDR'] ?? null,
+                        'user_agent'       => 'Sistema - Marcado Masivo',
+                        'observaciones'    => 'Marcado masivamente por el sistema',
                     ];
                     
                     if ($this->create($data)) {
@@ -453,7 +449,7 @@ class Asistencia extends BaseModel {
             $this->logActivity('marcar_asistencia_masiva', $sesionId, null, [
                 'total_estudiantes' => count($estudiantes),
                 'registros_creados' => $registrosCreados,
-                'presente' => $presente
+                'estado' => $presente ? 'presente' : 'ausente',
             ]);
             
             return $registrosCreados;
@@ -479,7 +475,7 @@ class Asistencia extends BaseModel {
                 e.nombre as estudiante,
                 e.documento,
                 e.codigo as codigo_estudiante,
-                CASE WHEN a.presente = 1 THEN 'Presente' ELSE 'Ausente' END as asistencia,
+                CASE WHEN a.estado_asistencia = 'presente' THEN 'Presente' ELSE COALESCE(a.estado_asistencia, 'Ausente') END as asistencia,
                 a.hora_registro,
                 a.observaciones
             FROM sesiones s
@@ -534,14 +530,14 @@ class Asistencia extends BaseModel {
                 e.codigo,
                 COUNT(DISTINCT s.id) as total_sesiones,
                 COUNT(a.id) as registros_asistencia,
-                SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) as presentes,
-                SUM(CASE WHEN a.presente = 0 THEN 1 ELSE 0 END) as ausentes,
+                SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as presentes,
+                SUM(CASE WHEN a.estado_asistencia != 'presente' THEN 1 ELSE 0 END) as ausentes,
                 ROUND(
-                    (SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(DISTINCT s.id)) * 100, 
+                    (SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / NULLIF(COUNT(DISTINCT s.id), 0)) * 100,
                     2
                 ) as porcentaje_asistencia
             FROM estudiantes e
-            INNER JOIN cursos_estudiantes ce ON e.id = ce.estudiante_id
+            INNER JOIN matriculas ce ON e.id = ce.estudiante_id
             LEFT JOIN sesiones s ON ce.curso_id = s.curso_id AND s.estado = 'finalizada'
             LEFT JOIN asistencias a ON s.id = a.sesion_id AND e.id = a.estudiante_id
             WHERE ce.curso_id = ?

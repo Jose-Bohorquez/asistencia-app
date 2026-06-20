@@ -193,8 +193,16 @@ if (!$isPrintMode) {
                                     <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['direccion'] ?? '') ?></td>
                                     <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['correo'] ?? '') ?></td>
                                     <td class="border border-black p-2 text-center">
-                                        <?php if (!empty($asistencia['firma'])): ?>
-                                            <img src="<?= $asistencia['firma'] ?>" alt="Firma" style="max-height: 20px; max-width: 100%; display: inline-block;">
+                                        <?php
+                                            $fSrc = null;
+                                            if (!empty($asistencia['firma_path'])) {
+                                                $fSrc = '/' . htmlspecialchars($asistencia['firma_path']);
+                                            } elseif (!empty($asistencia['firma'])) {
+                                                $fSrc = $asistencia['firma'];
+                                            }
+                                        ?>
+                                        <?php if ($fSrc): ?>
+                                            <img src="<?= $fSrc ?>" alt="Firma" style="max-height: 20px; max-width: 100%; display: inline-block;">
                                         <?php endif; ?>
                                     </td>
                                 </tr>
