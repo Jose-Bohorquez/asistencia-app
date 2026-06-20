@@ -89,7 +89,9 @@ class ExportController extends BaseController {
     }
 
     /**
-     * Descarga el archivo de asistencia de una sesión (PDF o Excel)
+     * Descarga/imprime el formato de asistencia de una sesión.
+     * PDF  → redirige a la vista de impresión FO-P06-F08 (browser print-to-PDF).
+     * excel/csv → descarga CSV directamente (sin dependencias externas).
      */
     private function exportarSesion($sesionId, $formato) {
         if (!$this->hasPermission('reportes_export')) {
@@ -97,22 +99,57 @@ class ExportController extends BaseController {
             return;
         }
 
-        $formatosPermitidos = ['excel', 'pdf', 'csv'];
+        // PDF: usar la vista de impresión que ya tiene el formato FO-P06-F08 completo
+        if ($formato === 'pdf') {
+            $this->redirect("index.php?page=sesiones&action=imprimir&sesion_id={$sesionId}");
+            return;
+        }
+
+        $formatosPermitidos = ['excel', 'csv'];
         if (!in_array($formato, $formatosPermitidos)) {
             $this->jsonResponse(['error' => 'Formato no válido'], 400);
             return;
         }
 
         require_once __DIR__ . '/../models/Asistencia.php';
-        $asistenciaModel = new Asistencia();
-        $datos = $asistenciaModel->getBySesion($sesionId);
+        require_once __DIR__ . '/../models/Sesion.php';
 
-        if (empty($datos)) {
-            $this->jsonResponse(['error' => 'No hay asistencias para exportar'], 404);
-            return;
+        $asistenciaModel = new Asistencia();
+        $sesionModel     = new Sesion();
+
+        $sesion      = $sesionModel->getWithCursoInfo($sesionId);
+        $asistencias = $asistenciaModel->getBySesion($sesionId);
+
+        $cursoNombre = $sesion['curso_nombre'] ?? 'sesion_' . $sesionId;
+        $fecha       = $sesion['fecha'] ?? date('Y-m-d');
+        $filename    = 'asistencia_' . preg_replace('/[^a-z0-9_-]/i', '_', $cursoNombre)
+                       . '_' . $fecha . '.csv';
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0');
+
+        $out = fopen('php://output', 'w');
+        fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF)); // BOM UTF-8
+
+        fputcsv($out, ['NOMBRE ESTUDIANTE', 'DOCUMENTO', 'CÓDIGO', 'TELÉFONO',
+                       'DIRECCIÓN', 'CORREO ELECTRÓNICO', 'ESTADO', 'HORA REGISTRO'], ';');
+
+        foreach ($asistencias as $a) {
+            fputcsv($out, [
+                $a['estudiante_nombre']    ?? '',
+                $a['estudiante_documento'] ?? '',
+                $a['estudiante_codigo']    ?? '',
+                $a['estudiante_telefono']  ?? '',
+                $a['estudiante_direccion'] ?? '',
+                $a['estudiante_correo']    ?? $a['estudiante_email'] ?? '',
+                $a['estado_asistencia']    ?? $a['estado'] ?? '',
+                $a['hora_registro']        ?? '',
+            ], ';');
         }
 
-        $this->realizarExportacion($datos, 'asistencias', $formato);
+        fclose($out);
+        exit;
     }
     
     /**

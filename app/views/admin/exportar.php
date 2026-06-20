@@ -38,23 +38,19 @@ if (!$isPrintMode) {
     <div class="flex justify-between items-center mb-6 no-print">
         <h1 class="text-2xl font-bold text-gray-800">Exportar Asistencia</h1>
         <?php if (isset($_SESSION['user_rol']) && in_array($_SESSION['user_rol'], ['admin', 'super_admin', 'profesor'])): ?>
-            <div>
-                <button id="btnImprimir" class="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2">
+            <div class="flex flex-wrap gap-2">
+                <button id="btnImprimir" class="bg-blue-800 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">
                     <i class="fas fa-print mr-1"></i> Imprimir
                 </button>
-                <a href="index.php?page=exportar&sesion_id=<?= intval($sesion['id']) ?>&format=pdf&csrf_token=<?= $_SESSION['csrf_token'] ?? '' ?>" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
-                    <i class="fas fa-file-pdf mr-1"></i> Exportar PDF
+                <a href="index.php?page=sesiones&action=imprimir&sesion_id=<?= intval($sesion['id']) ?>"
+                   target="_blank"
+                   class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded">
+                    <i class="fas fa-file-pdf mr-1"></i> Ver / Imprimir PDF
                 </a>
-                <!-- Aquí puedes agregar el botón para exportar a Excel -->
-                <a href="index.php?page=exportar&sesion_id=<?= intval($sesion['id']) ?>&format=excel&csrf_token=<?= $_SESSION['csrf_token'] ?? '' ?>" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded mr-2">
-                    <i class="fas fa-file-excel mr-1"></i> Exportar Excel
+                <a href="index.php?page=exportar&sesion_id=<?= intval($sesion['id']) ?>&format=excel&csrf_token=<?= $_SESSION['csrf_token'] ?? '' ?>"
+                   class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded">
+                    <i class="fas fa-file-csv mr-1"></i> Descargar CSV
                 </a>
-                <button onclick="enviarPorCorreo('pdf', <?= intval($sesion['id']) ?>)" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded mr-2">
-                    <i class="fas fa-envelope mr-1"></i> Enviar PDF
-                </button>
-                <button onclick="enviarPorCorreo('excel', <?= intval($sesion['id']) ?>)" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded">
-                    <i class="fas fa-envelope mr-1"></i> Enviar Excel
-                </button>
             </div>
         <?php endif; ?>
     </div>
