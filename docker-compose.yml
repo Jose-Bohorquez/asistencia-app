@@ -17,6 +17,13 @@ services:
       DB_USER: developer
       DB_PASS: developer
       DOCKER_CONTAINER: "true"
+    entrypoint: >
+      bash -c "
+        mkdir -p /var/www/html/public/uploads/firmas &&
+        chown -R www-data:www-data /var/www/html/public/uploads &&
+        chmod -R 775 /var/www/html/public/uploads &&
+        apache2-foreground
+      "
     networks:
       - app-network
 
