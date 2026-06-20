@@ -7,6 +7,7 @@ config/env.local.php
 # ─── Archivos de debug y pruebas manuales ────────────────────────────────────
 debug_*.php
 test_*.php
+credenciales_prueba.txt
 
 # ─── Storage: archivos subidos por usuarios ──────────────────────────────────
 # Mantener la estructura de carpetas con .gitkeep, pero no los archivos reales
