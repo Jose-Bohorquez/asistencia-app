@@ -42,3 +42,5 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+public/uploads/firmas/**/*.png
+public/uploads/firmas/**/*.jpg
