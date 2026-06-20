@@ -283,7 +283,7 @@
                     <?php
                         $firmaSrc = null;
                         if (!empty($a['firma_path'])) {
-                            $firmaSrc = '/' . htmlspecialchars($a['firma_path']);
+                            $firmaSrc = APP_URL . '/' . htmlspecialchars($a['firma_path']);
                         } elseif (!empty($a['firma']) && str_starts_with($a['firma'], 'data:image/')) {
                             $firmaSrc = htmlspecialchars($a['firma']);
                         }

@@ -196,7 +196,7 @@ if (!$isPrintMode) {
                                         <?php
                                             $fSrc = null;
                                             if (!empty($asistencia['firma_path'])) {
-                                                $fSrc = '/' . htmlspecialchars($asistencia['firma_path']);
+                                                $fSrc = APP_URL . '/' . htmlspecialchars($asistencia['firma_path']);
                                             } elseif (!empty($asistencia['firma'])) {
                                                 $fSrc = $asistencia['firma'];
                                             }
