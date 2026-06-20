@@ -131,24 +131,34 @@
         .info-row td { font-size: 11px; padding: 3px 6px; }
         .info-row .label { font-weight: bold; }
 
-        /* Tabla de asistencia */
-        .attendance-table { width: 100%; border-collapse: collapse; margin-top: 0; }
+        /* Tabla de asistencia — columnas auto-ajustadas al contenido */
+        .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0;
+            table-layout: auto;
+        }
         .attendance-table th {
             background: #fff;
             font-weight: bold;
             font-size: 10px;
             text-align: center;
             border: 1.2px solid #000;
-            padding: 4px 3px;
+            padding: 4px 6px;
+            white-space: nowrap;
         }
         .attendance-table td {
             border: 1.2px solid #000;
-            padding: 2px 4px;
+            padding: 3px 6px;
             font-size: 10px;
-            height: 22px;
+            height: 26px;
             vertical-align: middle;
         }
-        .firma-img { max-height: 18px; max-width: 120px; display: block; margin: 0 auto; }
+        /* Columnas de datos cortos: nunca parten */
+        .col-doc, .col-cod, .col-tel { white-space: nowrap; text-align: center; }
+        /* Columna firma: ancho mínimo para que la imagen se vea */
+        .col-firma { text-align: center; min-width: 110px; }
+        .firma-img { max-height: 40px; max-width: 160px; display: block; margin: 0 auto; }
 
         @media print {
             .no-print { display: none !important; }
@@ -256,13 +266,13 @@
     <table class="attendance-table">
         <thead>
             <tr>
-                <th style="width:22%;">NOMBRE ESTUDIANTE</th>
-                <th style="width:11%;">DOCUMENTO<br>IDENTIFICACIÓN</th>
-                <th style="width:11%;">CÓDIGO</th>
-                <th style="width:10%;">TELÉFONO</th>
-                <th style="width:18%;">DIRECCIÓN</th>
-                <th style="width:16%;">CORREO ELECTRÓNICO</th>
-                <th style="width:12%;">FIRMA</th>
+                <th>NOMBRE ESTUDIANTE</th>
+                <th>DOCUMENTO<br>IDENTIFICACIÓN</th>
+                <th>CÓDIGO</th>
+                <th>TELÉFONO</th>
+                <th>DIRECCIÓN</th>
+                <th>CORREO ELECTRÓNICO</th>
+                <th class="col-firma">FIRMA</th>
             </tr>
         </thead>
         <tbody>
@@ -274,12 +284,12 @@
             ?>
             <tr>
                 <td><?= $a ? htmlspecialchars($a['estudiante_nombre'] ?? '') : '' ?></td>
-                <td style="text-align:center;"><?= $a ? htmlspecialchars($a['estudiante_documento'] ?? '') : '' ?></td>
-                <td style="text-align:center;"><?= $a ? htmlspecialchars($a['estudiante_codigo'] ?? '') : '' ?></td>
-                <td style="text-align:center;"><?= $a ? htmlspecialchars($a['estudiante_telefono'] ?? '') : '' ?></td>
+                <td class="col-doc"><?= $a ? htmlspecialchars($a['estudiante_documento'] ?? '') : '' ?></td>
+                <td class="col-cod"><?= $a ? htmlspecialchars($a['estudiante_codigo'] ?? '') : '' ?></td>
+                <td class="col-tel"><?= $a ? htmlspecialchars($a['estudiante_telefono'] ?? '') : '' ?></td>
                 <td><?= $a ? htmlspecialchars($a['estudiante_direccion'] ?? '') : '' ?></td>
                 <td><?= $a ? htmlspecialchars($a['estudiante_correo'] ?? '') : '' ?></td>
-                <td style="text-align:center;">
+                <td class="col-firma">
                     <?php
                         $firmaSrc = null;
                         if (!empty($a['firma_path'])) {
