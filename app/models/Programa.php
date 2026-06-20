@@ -262,17 +262,13 @@ class Programa extends BaseModel {
         $conn = $this->getConnection();
         
         $stmt = $conn->prepare("
-            SELECT * FROM programas 
-            WHERE activo = 1 AND (
-                nombre LIKE ? OR 
-                codigo LIKE ? OR 
-                descripcion LIKE ?
-            )
+            SELECT * FROM programas
+            WHERE activo = 1 AND (nombre LIKE ? OR codigo LIKE ?)
             ORDER BY nombre
         ");
-        
+
         $searchTerm = "%{$term}%";
-        $stmt->bind_param("sss", $searchTerm, $searchTerm, $searchTerm);
+        $stmt->bind_param("ss", $searchTerm, $searchTerm);
         $stmt->execute();
         $result = $stmt->get_result();
         
@@ -364,9 +360,9 @@ class Programa extends BaseModel {
                 COUNT(DISTINCT s.id) as total_sesiones,
                 COUNT(DISTINCT ce.estudiante_id) as total_estudiantes,
                 COUNT(a.id) as total_registros_asistencia,
-                SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) as total_presentes,
+                SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as total_presentes,
                 ROUND(
-                    (SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(a.id)) * 100, 
+                    (SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id),0)) * 100,
                     2
                 ) as porcentaje_asistencia
             FROM cursos c
@@ -472,12 +468,12 @@ class Programa extends BaseModel {
         $types  = '';
 
         if (!empty($filtros['buscar'])) {
-            $sql .= ' AND (p.nombre LIKE ? OR p.codigo LIKE ? OR p.descripcion LIKE ?)';
+            $sql .= ' AND (p.nombre LIKE ? OR p.codigo LIKE ?)';
             $term = '%' . $filtros['buscar'] . '%';
-            $params[] = $term; $params[] = $term; $params[] = $term;
-            $types   .= 'sss';
+            $params[] = $term; $params[] = $term;
+            $types   .= 'ss';
         }
-        if ($filtros['activo'] !== '') {
+        if (isset($filtros['activo']) && $filtros['activo'] !== '') {
             $sql .= ' AND p.activo = ?';
             $params[] = (int)$filtros['activo'];
             $types   .= 'i';
@@ -486,7 +482,8 @@ class Programa extends BaseModel {
         $sql .= ' GROUP BY p.id';
 
         $allowedOrden = ['nombre', 'codigo', 'created_at'];
-        $orden = in_array($filtros['orden'] ?? 'nombre', $allowedOrden) ? $filtros['orden'] : 'nombre';
+        $ordenKey = $filtros['orden'] ?? 'nombre';
+        $orden = in_array($ordenKey, $allowedOrden) ? $ordenKey : 'nombre';
         $dir   = ($filtros['direccion'] ?? 'ASC') === 'DESC' ? 'DESC' : 'ASC';
         $sql  .= " ORDER BY p.{$orden} {$dir}";
 

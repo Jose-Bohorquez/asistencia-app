@@ -186,7 +186,7 @@ class Estudiante extends BaseModel {
                 s.descripcion as sesion_descripcion,
                 c.nombre as curso_nombre,
                 c.codigo as curso_codigo,
-                a.presente,
+                a.estado_asistencia,
                 a.hora_registro,
                 a.observaciones
             FROM asistencias a
@@ -238,12 +238,12 @@ class Estudiante extends BaseModel {
         
         // Estadísticas generales
         $sql = "
-            SELECT 
+            SELECT
                 COUNT(*) as total_registros,
-                SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) as presentes,
-                SUM(CASE WHEN a.presente = 0 THEN 1 ELSE 0 END) as ausentes,
+                SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as presentes,
+                SUM(CASE WHEN a.estado_asistencia = 'ausente' THEN 1 ELSE 0 END) as ausentes,
                 ROUND(
-                    (SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(*)) * 100, 
+                    (SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / NULLIF(COUNT(*),0)) * 100,
                     2
                 ) as porcentaje_asistencia
             FROM asistencias a
@@ -262,13 +262,13 @@ class Estudiante extends BaseModel {
         // Estadísticas por curso (si no se especifica un curso)
         if (!$cursoId) {
             $sql = "
-                SELECT 
+                SELECT
                     c.nombre as curso_nombre,
                     c.codigo as curso_codigo,
                     COUNT(*) as total_registros,
-                    SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) as presentes,
+                    SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) as presentes,
                     ROUND(
-                        (SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(*)) * 100, 
+                        (SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / NULLIF(COUNT(*),0)) * 100,
                         2
                     ) as porcentaje_asistencia
                 FROM asistencias a
@@ -556,11 +556,11 @@ class Estudiante extends BaseModel {
         
         // Estudiantes con mejor asistencia (top 5)
         $stmt = $conn->prepare("
-            SELECT 
+            SELECT
                 e.nombre,
                 e.codigo,
                 ROUND(
-                    (SUM(CASE WHEN a.presente = 1 THEN 1 ELSE 0 END) / COUNT(a.id)) * 100, 
+                    (SUM(CASE WHEN a.estado_asistencia = 'presente' THEN 1 ELSE 0 END) / NULLIF(COUNT(a.id),0)) * 100,
                     2
                 ) as porcentaje_asistencia
             FROM estudiantes e
@@ -667,5 +667,90 @@ class Estudiante extends BaseModel {
 
     public function getAll($conditions = []) {
         return $this->all($conditions, 'nombre');
+    }
+
+    /**
+     * Exportar estudiantes (opcionalmente filtrados por curso)
+     */
+    public function exportar($cursoId = null) {
+        $conn = $this->getConnection();
+        if ($cursoId) {
+            $stmt = $conn->prepare("
+                SELECT e.*, m.fecha_inscripcion,
+                       c.nombre as curso_nombre, c.codigo as curso_codigo
+                FROM estudiantes e
+                INNER JOIN matriculas m ON e.id = m.estudiante_id
+                INNER JOIN cursos c ON m.curso_id = c.id
+                WHERE m.curso_id = ? AND e.activo = 1
+                ORDER BY e.nombre
+            ");
+            $stmt->bind_param('i', $cursoId);
+        } else {
+            $stmt = $conn->prepare("
+                SELECT e.*,
+                    GROUP_CONCAT(c.nombre SEPARATOR ', ') as cursos
+                FROM estudiantes e
+                LEFT JOIN matriculas m ON e.id = m.estudiante_id
+                LEFT JOIN cursos c ON m.curso_id = c.id AND c.activo = 1
+                WHERE e.activo = 1
+                GROUP BY e.id
+                ORDER BY e.nombre
+            ");
+        }
+        $stmt->execute();
+        $rows = [];
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) $rows[] = $row;
+        $stmt->close();
+        return $rows;
+    }
+
+    /**
+     * Obtener estudiantes paginados con filtros opcionales
+     */
+    public function getPaginated($page = 1, $perPage = 10, $filtros = []) {
+        $conn   = $this->getConnection();
+        $offset = ($page - 1) * $perPage;
+
+        $where  = 'WHERE e.activo = 1';
+        $params = [];
+        $types  = '';
+
+        if (!empty($filtros['buscar'])) {
+            $where   .= ' AND (e.nombre LIKE ? OR e.documento LIKE ? OR e.codigo LIKE ? OR e.email LIKE ?)';
+            $term     = '%' . $filtros['buscar'] . '%';
+            $params   = array_merge($params, [$term, $term, $term, $term]);
+            $types   .= 'ssss';
+        }
+
+        // Total
+        $countSql  = "SELECT COUNT(*) as total FROM estudiantes e $where";
+        $stmt = $conn->prepare($countSql);
+        if (!empty($params)) $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $total = (int)($stmt->get_result()->fetch_assoc()['total'] ?? 0);
+        $stmt->close();
+
+        // Datos
+        $sql  = "SELECT e.* FROM estudiantes e $where ORDER BY e.nombre LIMIT ? OFFSET ?";
+        $allParams = array_merge($params, [$perPage, $offset]);
+        $allTypes  = $types . 'ii';
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($allTypes, ...$allParams);
+        $stmt->execute();
+        $rows = [];
+        $res  = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) $rows[] = $row;
+        $stmt->close();
+
+        return [
+            'data' => $rows,
+            'pagination' => [
+                'total'    => $total,
+                'page'     => $page,
+                'per_page' => $perPage,
+                'pages'    => (int)ceil($total / $perPage),
+            ],
+        ];
     }
 }
