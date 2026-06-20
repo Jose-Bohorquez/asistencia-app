@@ -94,7 +94,7 @@ class Usuario extends BaseModel {
 
         $userId = parent::create($data);
         if ($userId) {
-            $this->logActivity('create_pendiente', $userId, null, ['email' => $data['email'], 'rol' => $data['rol']]);
+            try { $this->logActivity('create_pendiente', $userId, null, ['email' => $data['email'], 'rol' => $data['rol']]); } catch (\Throwable $e) { error_log('Usuario::createPendiente logActivity: ' . $e->getMessage()); }
         }
         return $userId;
     }
@@ -126,7 +126,7 @@ class Usuario extends BaseModel {
 
         $ok = parent::update($userId, $updateData);
         if ($ok) {
-            $this->logActivity('cuenta_activada', $userId);
+            try { $this->logActivity('cuenta_activada', $userId); } catch (\Throwable $e) { error_log('Usuario::activarCuenta logActivity: ' . $e->getMessage()); }
         }
         return $ok;
     }

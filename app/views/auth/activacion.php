@@ -138,7 +138,6 @@ ob_start();
 $content = ob_get_clean();
 
 $customJS[] = '
-<script>
 function togglePass(id, btn) {
     const input = document.getElementById(id);
     const icon  = btn.querySelector("i");
@@ -151,7 +150,6 @@ function togglePass(id, btn) {
     }
 }
 
-// Validación client-side: contraseñas coinciden
 document.querySelector("form").addEventListener("submit", function(e) {
     const p1 = document.getElementById("password").value;
     const p2 = document.getElementById("password_conf").value;
@@ -165,7 +163,6 @@ document.querySelector("form").addEventListener("submit", function(e) {
         });
     }
 });
-</script>
 ';
 
 require_once __DIR__ . '/../layouts/base.php';

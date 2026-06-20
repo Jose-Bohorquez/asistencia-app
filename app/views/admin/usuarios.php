@@ -211,6 +211,14 @@ ob_start();
                         <td class="px-4 py-3">
                             <div class="flex items-center justify-end gap-1">
                                 <?php if ($usuario['activo']): ?>
+                                <?php if (($usuario['estado_cuenta'] ?? '') === 'pendiente_activacion'): ?>
+                                <button type="button"
+                                        onclick="reenviarActivacion(<?= (int)$usuario['id'] ?>, '<?= htmlspecialchars($usuario['email'], ENT_QUOTES) ?>')"
+                                        title="Reenviar correo de activación"
+                                        class="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-xs font-medium transition-colors">
+                                    <i class="fas fa-paper-plane"></i> Reenviar
+                                </button>
+                                <?php endif; ?>
                                 <button type="button"
                                         onclick="editarUsuario(<?= htmlspecialchars(json_encode([
                                             'id'       => $usuario['id'],
@@ -278,6 +286,13 @@ ob_start();
                 </div>
                 <?php if (in_array($userRol, ['super_admin']) && $usuario['activo']): ?>
                 <div class="flex flex-wrap gap-2 mt-2">
+                    <?php if (($usuario['estado_cuenta'] ?? '') === 'pendiente_activacion'): ?>
+                    <button type="button"
+                            onclick="reenviarActivacion(<?= (int)$usuario['id'] ?>, '<?= htmlspecialchars($usuario['email'], ENT_QUOTES) ?>')"
+                            class="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium active:bg-blue-100">
+                        <i class="fas fa-paper-plane"></i> Reenviar
+                    </button>
+                    <?php endif; ?>
                     <button type="button"
                             onclick="editarUsuario(<?= htmlspecialchars(json_encode([
                                 'id'       => $usuario['id'],
@@ -394,6 +409,33 @@ function editarUsuario(usuario) {
     document.getElementById('pwdHintNew') && (document.getElementById('pwdHintNew').classList.add('hidden'));
     formUsuario.classList.remove('hidden');
     formUsuario.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function reenviarActivacion(id, email) {
+    Swal.fire({
+        title: '¿Reenviar correo de activación?',
+        html: `Se enviará un nuevo enlace de activación a <strong>${email}</strong>.<br>El enlace anterior quedará invalidado.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, reenviar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#2563eb',
+    }).then(result => {
+        if (!result.isConfirmed) return;
+        const fd = new FormData();
+        fd.append('id', id);
+        fd.append('csrf_token', document.querySelector('meta[name="csrf-token"]')?.content || '<?= htmlspecialchars($_SESSION['csrf_token'] ?? '', ENT_QUOTES) ?>');
+        fetch('index.php?page=usuarios&action=resend-activation', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({ icon: 'success', title: 'Correo enviado', text: data.message, confirmButtonColor: '#2563eb' });
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Error', text: data.error || 'No se pudo enviar el correo.', confirmButtonColor: '#dc2626' });
+                }
+            })
+            .catch(() => Swal.fire({ icon: 'error', title: 'Error de red', text: 'No se pudo conectar con el servidor.', confirmButtonColor: '#dc2626' }));
+    });
 }
 </script>
 

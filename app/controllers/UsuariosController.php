@@ -40,6 +40,9 @@ class UsuariosController extends BaseController {
             case 'toggle-status':
                 $this->toggleStatus();
                 break;
+            case 'resend-activation':
+                $this->resendActivation();
+                break;
             case 'export':
                 $this->export();
                 break;
@@ -94,7 +97,7 @@ class UsuariosController extends BaseController {
                 'can_delete' => $this->hasPermission('usuarios_delete')
             ]);
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleUsuariosError($e, 'Error al cargar los usuarios');
         }
     }
@@ -281,7 +284,7 @@ class UsuariosController extends BaseController {
                 }
             }
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->jsonResponse(['error' => 'Error al eliminar el usuario'], 500);
         }
     }
@@ -339,7 +342,7 @@ class UsuariosController extends BaseController {
                 ]);
             }
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleUsuariosError($e, 'Error al cambiar el estado del usuario');
         }
     }
@@ -365,7 +368,7 @@ class UsuariosController extends BaseController {
                 $this->exportToPDF($usuarios, 'usuarios');
             }
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleUsuariosError($e, 'Error al exportar usuarios');
         }
     }
@@ -480,7 +483,7 @@ class UsuariosController extends BaseController {
                 'email_enviado' => $emailEnviado,
             ];
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             error_log('processUserForm error: ' . $e->getMessage());
             return ['errors' => ['Error al procesar el usuario. Intente nuevamente.']];
         }
@@ -537,6 +540,55 @@ class UsuariosController extends BaseController {
         fclose($output);
     }
     
+    /**
+     * Reenviar correo de activación a un usuario pendiente
+     */
+    public function resendActivation() {
+        if (!$this->hasPermission('usuarios_update')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para esta acción'], 403);
+            return;
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            $this->jsonResponse(['error' => 'Método no permitido'], 405);
+            return;
+        }
+
+        $id = intval($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            $this->jsonResponse(['error' => 'ID de usuario no válido'], 400);
+            return;
+        }
+
+        $usuario = $this->usuarioModel->find($id);
+        if (!$usuario) {
+            $this->jsonResponse(['error' => 'Usuario no encontrado'], 404);
+            return;
+        }
+
+        if ($usuario['estado_cuenta'] !== 'pendiente_activacion') {
+            $this->jsonResponse(['error' => 'Este usuario ya tiene su cuenta activa'], 400);
+            return;
+        }
+
+        try {
+            $tokenModel = new TokenActivacion();
+            $tokenReal  = $tokenModel->generarToken($id, TokenActivacion::TIPO_ACTIVACION);
+
+            $mailService  = new MailService();
+            $emailEnviado = $mailService->enviarActivacion($usuario['email'], $usuario['nombre'], $tokenReal);
+
+            if ($emailEnviado) {
+                $this->jsonResponse(['success' => true, 'message' => 'Correo de activación reenviado correctamente']);
+            } else {
+                $this->jsonResponse(['error' => 'No se pudo enviar el correo. Verifica la configuración SMTP del servidor.'], 500);
+            }
+        } catch (\Throwable $e) {
+            error_log('resendActivation error: ' . $e->getMessage());
+            $this->jsonResponse(['error' => 'Error interno al reenviar el correo'], 500);
+        }
+    }
+
     /**
      * Verificar si el usuario tiene un permiso específico
      */
