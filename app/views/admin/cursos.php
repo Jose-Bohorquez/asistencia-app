@@ -63,10 +63,11 @@ $esAdmin = in_array($current_user['rol'] ?? '', ['super_admin', 'admin']);
 
 <!-- Alertas flash -->
 <?php if (!empty($flash_message)): ?>
+<?php $fType = $flash_message['type'] ?? 'info'; $fText = $flash_message['text'] ?? $flash_message['message'] ?? ''; ?>
 <div class="mb-4 px-4 py-3 rounded-lg text-sm font-medium
-    <?= ($flash_message['type'] ?? '') === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200' ?>">
-    <i class="fas <?= ($flash_message['type'] ?? '') === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle' ?> mr-1.5"></i>
-    <?= htmlspecialchars($flash_message['message'] ?? '') ?>
+    <?= $fType === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200' ?>">
+    <i class="fas <?= $fType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle' ?> mr-1.5"></i>
+    <?= htmlspecialchars($fText) ?>
 </div>
 <?php endif; ?>
 
