@@ -199,7 +199,7 @@
         </div>
     </div>
     <div class="bar-right">
-        <a href="javascript:history.back()" class="btn-volver">
+        <a href="index.php?page=sesiones" class="btn-volver">
             &#8592; Volver
         </a>
         <button onclick="window.print()" class="btn-imprimir">

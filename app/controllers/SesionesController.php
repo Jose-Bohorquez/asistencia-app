@@ -144,7 +144,7 @@ class SesionesController extends BaseController {
                 'can_activate' => $this->hasPermission('sesiones_activate')
             ]);
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al cargar las sesiones');
         }
     }
@@ -357,7 +357,7 @@ class SesionesController extends BaseController {
                 }
             }
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->jsonResponse(['error' => 'Error al eliminar la sesión'], 500);
         }
     }
@@ -368,10 +368,15 @@ class SesionesController extends BaseController {
     public function activate() {
         // Verificar permisos
         if (!$this->hasPermission('sesiones_activate')) {
-            $this->jsonResponse(['error' => 'No tienes permisos para activar sesiones'], 403);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para activar sesiones'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para activar sesiones', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
             return;
         }
-        
+
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $this->jsonResponse(['error' => 'Método no permitido'], 405);
             return;
@@ -396,12 +401,19 @@ class SesionesController extends BaseController {
 
         try {
             $result = $this->sesionModel->updateStatus($id, 'activa');
-            if (isset($result['errors'])) {
+            if (is_array($result) && isset($result['errors'])) {
                 $msg = implode(', ', (array)$result['errors']);
                 if ($this->isAjaxRequest()) {
                     $this->jsonResponse(['errors' => $result['errors']], 400);
                 } else {
                     $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
+            } elseif ($result === false) {
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['error' => 'No se pudo activar la sesión'], 500);
+                } else {
+                    $this->setFlashMessage('No se pudo activar la sesión. Intenta de nuevo.', 'error');
                     $this->redirect('index.php?page=sesiones');
                 }
             } else {
@@ -413,7 +425,7 @@ class SesionesController extends BaseController {
                     $this->redirect('index.php?page=sesiones');
                 }
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al activar la sesión');
         }
     }
@@ -424,7 +436,12 @@ class SesionesController extends BaseController {
     public function deactivate() {
         // Verificar permisos
         if (!$this->hasPermission('sesiones_activate')) {
-            $this->jsonResponse(['error' => 'No tienes permisos para finalizar sesiones'], 403);
+            if ($this->isAjaxRequest()) {
+                $this->jsonResponse(['error' => 'No tienes permisos para finalizar sesiones'], 403);
+            } else {
+                $this->setFlashMessage('No tienes permisos para finalizar sesiones', 'error');
+                $this->redirect('index.php?page=sesiones');
+            }
             return;
         }
         
@@ -452,12 +469,19 @@ class SesionesController extends BaseController {
 
         try {
             $result = $this->sesionModel->updateStatus($id, 'finalizada');
-            if (isset($result['errors'])) {
+            if (is_array($result) && isset($result['errors'])) {
                 $msg = implode(', ', (array)$result['errors']);
                 if ($this->isAjaxRequest()) {
                     $this->jsonResponse(['errors' => $result['errors']], 400);
                 } else {
                     $this->setFlashMessage($msg, 'error');
+                    $this->redirect('index.php?page=sesiones');
+                }
+            } elseif ($result === false) {
+                if ($this->isAjaxRequest()) {
+                    $this->jsonResponse(['error' => 'No se pudo finalizar la sesión'], 500);
+                } else {
+                    $this->setFlashMessage('No se pudo finalizar la sesión. Intenta de nuevo.', 'error');
                     $this->redirect('index.php?page=sesiones');
                 }
             } else {
@@ -469,7 +493,7 @@ class SesionesController extends BaseController {
                     $this->redirect('index.php?page=sesiones');
                 }
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al finalizar la sesión');
         }
     }
@@ -501,7 +525,7 @@ class SesionesController extends BaseController {
                 $this->exportToPDF($sesiones, 'sesiones');
             }
             
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al exportar sesiones');
         }
     }
@@ -551,7 +575,7 @@ class SesionesController extends BaseController {
                 'asistencias' => $asistencias,
             ]);
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al cargar la sesión para impresión');
         }
     }
@@ -602,7 +626,7 @@ class SesionesController extends BaseController {
                 'can_activate' => $this->hasPermission('sesiones_activate'),
             ]);
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             $this->handleSesionesError($e, 'Error al cargar el detalle de la sesion');
         }
     }
@@ -676,7 +700,7 @@ class SesionesController extends BaseController {
                 'asistencias' => $lista,
             ]);
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             error_log('SesionesController::asistenciaJson error: ' . $e->getMessage());
             http_response_code(500);
             echo json_encode(['ok' => false, 'error' => 'Error interno']);
@@ -757,7 +781,7 @@ class SesionesController extends BaseController {
                 $result = $this->sesionModel->create($data);
                 return isset($result['errors']) ? $result : ['success' => true, 'id' => $result, 'data' => $data];
             }
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             error_log('procesarSesionForm error: ' . $e->getMessage());
             return ['errors' => ['Error al procesar la sesión. Intente nuevamente.']];
         }
@@ -870,13 +894,13 @@ class SesionesController extends BaseController {
     /**
      * Manejar errores
      */
-    protected function handleSesionesError($exception, $userMessage = 'Ha ocurrido un error') {
+    protected function handleSesionesError(\Throwable $exception, $userMessage = 'Ha ocurrido un error') {
         error_log('SesionesController: ' . $exception->getMessage());
         if ($this->isAjaxRequest()) {
             $this->jsonResponse(['error' => $userMessage], 500);
         } else {
             $this->setFlashMessage($userMessage, 'error');
-            $this->redirect('index.php?page=dashboard');
+            $this->redirect('index.php?page=sesiones');
         }
     }
 }

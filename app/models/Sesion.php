@@ -236,7 +236,7 @@ class Sesion extends BaseModel {
         $success = parent::update($id, ['estado' => self::ESTADO_ACTIVA]);
 
         if ($success) {
-            $this->logActivity('activar', $id);
+            try { $this->logActivity('activar', $id); } catch (\Throwable $e) { error_log('Sesion::activar logActivity: ' . $e->getMessage()); }
         }
 
         return $success;
@@ -262,9 +262,9 @@ class Sesion extends BaseModel {
         ]);
 
         if ($success) {
-            $this->logActivity('finalizar', $id);
+            try { $this->logActivity('finalizar', $id); } catch (\Throwable $e) { error_log('Sesion::finalizar logActivity: ' . $e->getMessage()); }
         }
-        
+
         return $success;
     }
     
@@ -291,9 +291,9 @@ class Sesion extends BaseModel {
         $success = parent::update($id, $updateData);
 
         if ($success) {
-            $this->logActivity('cancelar', $id, null, ['motivo' => $motivo]);
+            try { $this->logActivity('cancelar', $id, null, ['motivo' => $motivo]); } catch (\Throwable $e) { error_log('Sesion::cancelar logActivity: ' . $e->getMessage()); }
         }
-        
+
         return $success;
     }
     
