@@ -3,17 +3,32 @@
                   Sistema de Asistencia Universitaria
 =================================================================
 
-Este archivo contiene las credenciales de usuarios de prueba para
-acceder al sistema con diferentes roles y probar todas las funcionalidades.
+Este archivo contiene las credenciales reales de usuarios de prueba
+para acceder al sistema con diferentes roles.
+
+URL DEL SISTEMA  : http://localhost:8080
+phpMyAdmin       : http://localhost:8081
+Desbloquear IP   : docker exec asistencia-app-app-1 rm /tmp/login_block_*.json
+
+Versión del sistema : 2.0 (Refactorizada)
+Última actualización: 2026-06-20
+
+=================================================================
+                         USUARIOS ACTIVOS
+=================================================================
 
 -----------------------------------------------------------------
-                        SUPER ADMINISTRADOR
+                      SUPER ADMINISTRADORES
 -----------------------------------------------------------------
-Usuario: superadmin
-Contraseña: admin123
-Nombre: Super Administrador
-Email: superadmin@universidad.edu
-Rol: super_admin
+Usuario: superadmin1         Contraseña: SuperAdmin2024!
+Nombre : Carlos Rodríguez
+Email  : superadmin1@ingsis.edu.co
+Rol    : super_admin
+
+Usuario: superadmin2         Contraseña: SuperAdmin2024!
+Nombre : María González
+Email  : superadmin2@ingsis.edu.co
+Rol    : super_admin
 
 PERMISOS:
 ✅ Acceso total al sistema
@@ -21,127 +36,71 @@ PERMISOS:
 ✅ Gestión de programas y cursos
 ✅ Gestión de estudiantes y profesores
 ✅ Gestión de sesiones y asistencias
-✅ Acceso a todos los reportes
-✅ Exportación de datos
-✅ Configuración del sistema
-✅ Logs del sistema
+✅ Acceso a todos los reportes y exportaciones
+✅ Configuración del sistema y logs
 ✅ Funcionalidad de impersonación
 ✅ Backup y restauración
 
 -----------------------------------------------------------------
-                         ADMINISTRADOR
+                         ADMINISTRADORES
 -----------------------------------------------------------------
-Usuario: admin
-Contraseña: admin123
-Nombre: Administrador
-Email: admin@universidad.edu
-Rol: admin
+Usuario: admin1              Contraseña: Admin2024!
+Nombre : Pedro Martínez
+Email  : admin1@ingsis.edu.co
+Rol    : admin
+
+Usuario: admin2              Contraseña: Admin2024!
+Nombre : Laura Sánchez
+Email  : admin2@ingsis.edu.co
+Rol    : admin
 
 PERMISOS:
 ✅ Ver y editar usuarios (no eliminar)
-✅ Crear y gestionar programas
-✅ Crear y gestionar cursos
-✅ Gestión de estudiantes
-✅ Crear y gestionar sesiones
+✅ Crear y gestionar programas y cursos
+✅ Gestión de estudiantes y sesiones
 ✅ Ver y gestionar asistencias
-✅ Acceso a reportes
-✅ Exportación de datos
+✅ Acceso a reportes y exportaciones
 ❌ No puede eliminar usuarios
 ❌ No tiene acceso a logs del sistema
 ❌ No puede hacer backup/restauración
 
 -----------------------------------------------------------------
-                           PROFESOR
+                           PROFESORES
 -----------------------------------------------------------------
-Usuario: profesor1
-Contraseña: profesor123
-Nombre: Profesor Ejemplo
-Email: profesor1@universidad.edu
-Rol: profesor
+Usuario: profesor1           Contraseña: Profesor2024!
+Nombre : José Bohorquez
+Email  : jose.bohorquez@ingsis.edu.co
+Rol    : profesor
+
+Usuario: profesor2           Contraseña: Profesor2024!
+Nombre : Ana Torres
+Email  : ana.torres@ingsis.edu.co
+Rol    : profesor
 
 PERMISOS:
 ✅ Ver sus propios cursos y sesiones
 ✅ Crear sesiones para sus cursos
 ✅ Gestionar asistencia de sus estudiantes
-✅ Ver reportes de sus cursos
-✅ Exportar datos de sus cursos
+✅ Ver reportes y exportar datos de sus cursos
 ❌ No puede gestionar usuarios
 ❌ No puede crear/editar programas
 ❌ No puede ver cursos de otros profesores
-❌ Acceso limitado solo a sus recursos
 
 =================================================================
-                        INSTRUCCIONES DE USO
+                      SOLUCIÓN DE PROBLEMAS
 =================================================================
 
-1. ACCESO AL SISTEMA:
-   - URL: http://localhost:81/asistencia-app/public/
-   - Usar las credenciales de arriba según el rol que desees probar
+CUENTA BLOQUEADA (demasiados intentos fallidos):
+  docker exec asistencia-app-app-1 rm /tmp/login_block_*.json
 
-2. FUNCIONALIDADES POR ROL:
+CONTENEDORES CAÍDOS:
+  cd ~/proyectos/propios/asistencia-app && docker compose up -d
 
-   SUPER ADMIN:
-   - Dashboard completo con estadísticas generales
-   - Módulo de Usuarios: CRUD completo
-   - Módulo de Programas: CRUD completo
-   - Módulo de Cursos: CRUD completo
-   - Módulo de Sesiones: CRUD completo
-   - Reportes avanzados y exportaciones
-   - Configuración del sistema
+VERIFICAR ESTADO:
+  docker ps
 
-   ADMIN:
-   - Dashboard con estadísticas limitadas
-   - Gestión de usuarios (sin eliminar)
-   - Gestión completa de programas y cursos
-   - Gestión de sesiones y asistencias
-   - Reportes y exportaciones
-
-   PROFESOR:
-   - Dashboard personal con sus cursos
-   - Ver solo sus cursos asignados
-   - Crear y gestionar sesiones de sus cursos
-   - Tomar asistencia de sus estudiantes
-   - Reportes de sus cursos únicamente
-
-3. PRUEBAS RECOMENDADAS:
-
-   a) Probar login con cada rol
-   b) Verificar que cada rol solo vea sus opciones permitidas
-   c) Intentar acceder a funciones no permitidas (debe redirigir)
-   d) Probar creación, edición y eliminación según permisos
-   e) Verificar exportaciones y reportes
-   f) Probar funcionalidad de logout
-
-4. NOTAS IMPORTANTES:
-   - Las contraseñas están hasheadas en la base de datos
-   - El sistema tiene middleware de seguridad activo
-   - Todas las acciones se registran en logs
-   - El sistema valida permisos en cada acción
-
-=================================================================
-                         SOLUCIÓN DE PROBLEMAS
-=================================================================
-
-Si tienes problemas para acceder:
-
-1. Verificar que la base de datos esté corriendo
-2. Verificar que los usuarios estén insertados en la tabla 'usuarios'
-3. Verificar que el servidor web esté funcionando
-4. Revisar logs en caso de errores
-
-Para resetear contraseñas:
-- Las contraseñas están hasheadas con password_hash() de PHP
-- Para crear nuevas: usar password_hash('nueva_contraseña', PASSWORD_DEFAULT)
-
-=================================================================
-                            CONTACTO
-=================================================================
-
-Para soporte técnico o dudas sobre el sistema:
-- Revisar documentación en project_logs.md
-- Revisar REFACTORING_SUMMARY.md para detalles técnicos
-
-Fecha de creación: " . date('Y-m-d H:i:s') . "
-Versión del sistema: 2.0 (Refactorizada)
+CONTRASEÑAS:
+  Hasheadas con password_hash() de PHP (bcrypt $2y$10$)
+  Para generar nuevas: php -r "echo password_hash('nueva', PASSWORD_DEFAULT);"
 
 =================================================================
