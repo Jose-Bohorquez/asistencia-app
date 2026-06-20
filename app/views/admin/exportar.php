@@ -118,16 +118,16 @@ if (!$isPrintMode) {
                     <tr>
                         <td class="border border-black p-1" style="width: 33%;">
                             <span class="font-bold text-xs">ÁREA: </span>
-                            <span class="text-xs"><?= htmlspecialchars($sesion['area'] ?? '') ?></span>
+                            <span class="text-xs"><?= htmlspecialchars($sesion['curso_area'] ?? $sesion['area'] ?? '') ?></span>
                         </td>
                         <td class="border border-black p-1" style="width: 33%;">
                             <span class="font-bold text-xs">PROGRAMA: </span>
-                            <span class="text-xs"><?= htmlspecialchars($sesion['programa'] ?? '') ?></span>
+                            <span class="text-xs"><?= htmlspecialchars($sesion['programa_nombre'] ?? $sesion['curso_programa'] ?? $sesion['programa'] ?? '') ?></span>
                         </td>
                         <td class="border border-black p-1" style="width: 34%;">
-    <span class="font-bold text-xs">CÓDIGO: </span>
-    <span class="text-xs"><?= htmlspecialchars($sesion['codigo'] ?? '') ?></span>
-</td>
+                            <span class="font-bold text-xs">CÓDIGO: </span>
+                            <span class="text-xs"><?= htmlspecialchars($sesion['curso_codigo'] ?? $sesion['codigo'] ?? '') ?></span>
+                        </td>
                     </tr>
                 </table>
                 
@@ -186,12 +186,12 @@ if (!$isPrintMode) {
                         <?php else: ?>
                             <?php foreach ($asistencias as $asistencia): ?>
                                 <tr>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['nombre'] ?? '') ?></td>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['documento'] ?? '') ?></td>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['codigo'] ?? '') ?></td>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['telefono'] ?? '') ?></td>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['direccion'] ?? '') ?></td>
-                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['correo'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_nombre'] ?? $asistencia['nombre'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_documento'] ?? $asistencia['documento'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_codigo'] ?? $asistencia['codigo'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_telefono'] ?? $asistencia['telefono'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_direccion'] ?? $asistencia['direccion'] ?? '') ?></td>
+                                    <td class="border border-black p-2 text-xs"><?= htmlspecialchars($asistencia['estudiante_correo'] ?? $asistencia['correo'] ?? '') ?></td>
                                     <td class="border border-black p-2 text-center">
                                         <?php
                                             $fSrc = null;

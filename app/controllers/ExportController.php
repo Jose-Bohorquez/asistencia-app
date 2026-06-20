@@ -16,9 +16,22 @@ class ExportController extends BaseController {
      * Manejar solicitudes de exportación
      */
     public function handleRequest() {
-        $action = $_GET['action'] ?? $_POST['action'] ?? 'export';
-        
+        $sesionId = intval($_GET['sesion_id'] ?? 0);
+        $format   = $_GET['format'] ?? null;
+
         try {
+            // Flujo por sesión: renderizar vista o descargar archivo
+            if ($sesionId > 0) {
+                if ($format) {
+                    $this->exportarSesion($sesionId, $format);
+                } else {
+                    $this->renderExportar($sesionId);
+                }
+                return;
+            }
+
+            // Flujo genérico por tipo/acción
+            $action = $_GET['action'] ?? $_POST['action'] ?? 'export';
             switch ($action) {
                 case 'export':
                     $this->export();
@@ -32,6 +45,74 @@ class ExportController extends BaseController {
         } catch (Exception $e) {
             $this->handleError($e, 'Error en exportación');
         }
+    }
+
+    /**
+     * Renderiza la vista de exportar para una sesión específica
+     */
+    private function renderExportar($sesionId) {
+        if (!$this->hasPermission('sesiones_read')) {
+            $this->redirectUnauthorized();
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Sesion.php';
+        require_once __DIR__ . '/../models/Asistencia.php';
+
+        $sesionModel     = new Sesion();
+        $asistenciaModel = new Asistencia();
+
+        $sesion = $sesionModel->getWithCursoInfo($sesionId);
+        if (!$sesion) {
+            $this->setFlashMessage('Sesión no encontrada', 'error');
+            $this->redirect('index.php?page=sesiones');
+            return;
+        }
+
+        if ($this->currentUser['rol'] === 'profesor') {
+            require_once __DIR__ . '/../models/Curso.php';
+            $cursoModel = new Curso();
+            $curso = $cursoModel->find($sesion['curso_id']);
+            if (!$curso || $curso['profesor_id'] != $this->currentUser['id']) {
+                $this->redirectUnauthorized();
+                return;
+            }
+        }
+
+        $asistencias = $asistenciaModel->getBySesion($sesionId);
+
+        $this->render('admin/exportar', [
+            'page_title'  => 'Exportar Asistencia',
+            'sesion'      => $sesion,
+            'asistencias' => $asistencias,
+        ]);
+    }
+
+    /**
+     * Descarga el archivo de asistencia de una sesión (PDF o Excel)
+     */
+    private function exportarSesion($sesionId, $formato) {
+        if (!$this->hasPermission('reportes_export')) {
+            $this->jsonResponse(['error' => 'No tienes permisos para exportar'], 403);
+            return;
+        }
+
+        $formatosPermitidos = ['excel', 'pdf', 'csv'];
+        if (!in_array($formato, $formatosPermitidos)) {
+            $this->jsonResponse(['error' => 'Formato no válido'], 400);
+            return;
+        }
+
+        require_once __DIR__ . '/../models/Asistencia.php';
+        $asistenciaModel = new Asistencia();
+        $datos = $asistenciaModel->getBySesion($sesionId);
+
+        if (empty($datos)) {
+            $this->jsonResponse(['error' => 'No hay asistencias para exportar'], 404);
+            return;
+        }
+
+        $this->realizarExportacion($datos, 'asistencias', $formato);
     }
     
     /**
