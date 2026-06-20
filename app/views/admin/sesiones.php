@@ -567,8 +567,12 @@ function editarSesion(sesion) {
     sesionForm.action = 'index.php?page=sesiones&action=edit';
     document.getElementById('sesionCurso').value      = sesion.curso_id;
     document.getElementById('sesionFecha').value      = sesion.fecha;
-    document.getElementById('sesionHoraInicio').value = sesion.hora_inicio ? sesion.hora_inicio.slice(0, 5) : '';
-    document.getElementById('sesionHoraFin').value    = sesion.hora_fin    ? sesion.hora_fin.slice(0, 5)    : '';
+    const horaIni = sesion.hora_inicio ? sesion.hora_inicio.slice(0, 5) : '';
+    const horaFin = sesion.hora_fin    ? sesion.hora_fin.slice(0, 5)    : '';
+    document.getElementById('sesionHoraInicio').value = horaIni;
+    // Solo pre-rellena hora_fin si es mayor que hora_inicio (evita datos corruptos
+    // que bloquean el formulario con "hora fin debe ser posterior a hora inicio")
+    document.getElementById('sesionHoraFin').value    = (horaFin && horaFin > horaIni) ? horaFin : '';
     document.getElementById('sesionEstado').value     = sesion.estado;
     document.getElementById('sesionAula').value       = sesion.aula  || '';
     document.getElementById('sesionSede').value       = sesion.sede  || '';

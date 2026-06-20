@@ -224,25 +224,21 @@ class Sesion extends BaseModel {
      */
     public function activar($id) {
         $sesion = $this->find($id);
-        
+
         if (!$sesion) {
             return ['errors' => ['sesion' => 'Sesión no encontrada']];
         }
-        
+
         if ($sesion['estado'] === self::ESTADO_ACTIVA) {
             return ['errors' => ['estado' => 'La sesión ya está activa']];
         }
 
-        if ($sesion['estado'] === self::ESTADO_FINALIZADA) {
-            return ['errors' => ['estado' => 'No se puede activar una sesión finalizada']];
-        }
-        
         $success = parent::update($id, ['estado' => self::ESTADO_ACTIVA]);
 
         if ($success) {
             $this->logActivity('activar', $id);
         }
-        
+
         return $success;
     }
     
